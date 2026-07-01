@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32-S3 LSTM Inference Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'JetBrains Mono', monospace; background: #020617; min-height: 100vh; padding: 2rem; color: white; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2rem; }
+    .header-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+    .pulse-dot { width: 12px; height: 12px; background: #34d399; border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; }
+    .subtitle { color: #94a3b8; font-size: 0.875rem; margin-left: 1.75rem; }
+    .diagram-container { background: rgba(15, 23, 42, 0.5); border-radius: 1rem; border: 1px solid #1e293b; padding: 1.5rem; overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 2rem; }
+    .card { background: rgba(15, 23, 42, 0.5); border-radius: 0.75rem; border: 1px solid #1e293b; padding: 1.25rem; }
+    .card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-dot.cyan { background: #22d3ee; } .card-dot.emerald { background: #34d399; } .card-dot.violet { background: #a78bfa; } .card-dot.amber { background: #fbbf24; } .card-dot.rose { background: #fb7185; }
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+    .card ul { list-style: none; color: #94a3b8; font-size: 0.75rem; }
+    .card li { margin-bottom: 0.375rem; }
+    .footer { text-align: center; margin-top: 1.5rem; color: #475569; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-row">
+        <div class="pulse-dot"></div>
+        <h1>ESP32-S3 LSTM Inference Architecture</h1>
+      </div>
+      <p class="subtitle">32.59 tok/s char-LSTM on $4 hardware — ESP-NN SIMD + SRAM tiling + dual-core</p>
+    </div>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 720">
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+          </marker>
+          <marker id="arrowhead-cyan" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee" />
+          </marker>
+          <marker id="arrowhead-emerald" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#34d399" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        <!-- ESP32-S3 Boundary -->
+        <rect x="30" y="40" width="940" height="640" rx="12" fill="rgba(34, 211, 238, 0.03)" stroke="#22d3ee" stroke-width="1" stroke-dasharray="8,4"/>
+        <text x="44" y="58" fill="#22d3ee" font-size="10" font-weight="600">ESP32-S3 — 240MHz dual-core Xtensa LX7 — 8MB PSRAM — 512KB SRAM</text>
+
+        <!-- Flash Partition -->
+        <rect x="50" y="80" width="180" height="80" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="140" y="105" fill="white" font-size="11" font-weight="600" text-anchor="middle">Flash Partition</text>
+        <text x="140" y="122" fill="#fbbf24" font-size="9" text-anchor="middle">0x210000, 5MB</text>
+        <text x="140" y="138" fill="#94a3b8" font-size="8" text-anchor="middle">RILM v1 weight pack</text>
+        <text x="140" y="152" fill="#94a3b8" font-size="8" text-anchor="middle">1.6MB all-int8 (H256)</text>
+
+        <!-- PSRAM -->
+        <rect x="50" y="200" width="180" height="120" rx="6" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="140" y="225" fill="white" font-size="11" font-weight="600" text-anchor="middle">PSRAM (8MB)</text>
+        <text x="140" y="245" fill="#a78bfa" font-size="9" text-anchor="middle">~100 MB/s bandwidth</text>
+        <text x="140" y="265" fill="#94a3b8" font-size="8" text-anchor="middle">wih: input weights</text>
+        <text x="140" y="280" fill="#94a3b8" font-size="8" text-anchor="middle">embed: embedding table</text>
+        <text x="140" y="295" fill="#94a3b8" font-size="8" text-anchor="middle">fc: output head</text>
+        <text x="140" y="310" fill="#94a3b8" font-size="8" text-anchor="middle">biases, scratch buffers</text>
+
+        <!-- SRAM Scratch -->
+        <rect x="50" y="360" width="180" height="80" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="140" y="385" fill="white" font-size="11" font-weight="600" text-anchor="middle">SRAM Scratch</text>
+        <text x="140" y="402" fill="#34d399" font-size="9" text-anchor="middle">262KB (H256 whh)</text>
+        <text x="140" y="418" fill="#94a3b8" font-size="8" text-anchor="middle">16-byte aligned</text>
+        <text x="140" y="432" fill="#94a3b8" font-size="8" text-anchor="middle">~200+ MB/s bandwidth</text>
+
+        <!-- Core 1 (Arduino) -->
+        <rect x="300" y="80" width="320" height="280" rx="8" fill="rgba(8, 51, 68, 0.3)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="460" y="105" fill="#22d3ee" font-size="11" font-weight="600" text-anchor="middle">Core 1 (Arduino loopTask)</text>
+
+        <rect x="320" y="120" width="130" height="50" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="385" y="140" fill="white" font-size="10" font-weight="600" text-anchor="middle">Embedding</text>
+        <text x="385" y="156" fill="#94a3b8" font-size="8" text-anchor="middle">token -> H256 vec</text>
+
+        <rect x="320" y="190" width="130" height="50" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="385" y="210" fill="white" font-size="10" font-weight="600" text-anchor="middle">LSTM Gates 0-1</text>
+        <text x="385" y="226" fill="#94a3b8" font-size="8" text-anchor="middle">input + forget</text>
+
+        <rect x="470" y="190" width="130" height="50" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="535" y="210" fill="white" font-size="10" font-weight="600" text-anchor="middle">Activation</text>
+        <text x="535" y="226" fill="#94a3b8" font-size="8" text-anchor="middle">sigmoid/tanh LUT</text>
+
+        <rect x="320" y="260" width="130" height="50" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="385" y="280" fill="white" font-size="10" font-weight="600" text-anchor="middle">FC Head</text>
+        <text x="385" y="296" fill="#94a3b8" font-size="8" text-anchor="middle">H256 -> vocab 33</text>
+
+        <rect x="470" y="260" width="130" height="50" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="535" y="280" fill="white" font-size="10" font-weight="600" text-anchor="middle">Argmax</text>
+        <text x="535" y="296" fill="#94a3b8" font-size="8" text-anchor="middle">-> next token</text>
+
+        <!-- Core 0 (Worker) -->
+        <rect x="300" y="400" width="320" height="140" rx="8" fill="rgba(6, 78, 59, 0.2)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="460" y="425" fill="#34d399" font-size="11" font-weight="600" text-anchor="middle">Core 0 (FreeRTOS worker)</text>
+
+        <rect x="340" y="440" width="240" height="60" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1"/>
+        <text x="460" y="465" fill="white" font-size="10" font-weight="600" text-anchor="middle">LSTM Gates 2-3</text>
+        <text x="460" y="481" fill="#94a3b8" font-size="8" text-anchor="middle">cell + output</text>
+        <text x="460" y="495" fill="#34d399" font-size="8" text-anchor="middle">parallel with core 1</text>
+
+        <!-- ESP-NN SIMD -->
+        <rect x="680" y="80" width="260" height="100" rx="6" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="810" y="105" fill="white" font-size="11" font-weight="600" text-anchor="middle">ESP-NN SIMD Kernel</text>
+        <text x="810" y="125" fill="#fb7185" font-size="9" text-anchor="middle">esp_nn_dot_s8_aligned_esp32s3()</text>
+        <text x="810" y="142" fill="#94a3b8" font-size="8" text-anchor="middle">Xtensa LX7 vector instructions</text>
+        <text x="810" y="158" fill="#94a3b8" font-size="8" text-anchor="middle">16 int8 lanes/cycle</text>
+        <text x="810" y="172" fill="#fb7185" font-size="8" text-anchor="middle">12.6x faster than scalar (512x512)</text>
+
+        <!-- Benchmark Results -->
+        <rect x="680" y="220" width="260" height="180" rx="6" fill="rgba(76, 29, 149, 0.2)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="810" y="245" fill="white" font-size="11" font-weight="600" text-anchor="middle">Benchmark (p16 H256)</text>
+        <text x="810" y="270" fill="#a78bfa" font-size="14" font-weight="700" text-anchor="middle">32.59 tok/s</text>
+        <text x="810" y="290" fill="#94a3b8" font-size="9" text-anchor="middle">30.69 ms/token</text>
+        <line x1="700" y1="300" x2="920" y2="300" stroke="#1e293b" stroke-width="1"/>
+        <text x="700" y="318" fill="#94a3b8" font-size="8">wih (PSRAM)</text>
+        <text x="920" y="318" fill="white" font-size="8" text-anchor="end">11.1 ms</text>
+        <text x="700" y="333" fill="#34d399" font-size="8">whh (SRAM)</text>
+        <text x="920" y="333" fill="white" font-size="8" text-anchor="end">2.0 ms</text>
+        <text x="700" y="348" fill="#fbbf24" font-size="8">sram_copy</text>
+        <text x="920" y="348" fill="white" font-size="8" text-anchor="end">13.3 ms</text>
+        <text x="700" y="363" fill="#94a3b8" font-size="8">activation</text>
+        <text x="920" y="363" fill="white" font-size="8" text-anchor="end">0.7 ms</text>
+        <text x="700" y="378" fill="#94a3b8" font-size="8">fc + embed</text>
+        <text x="920" y="378" fill="white" font-size="8" text-anchor="end">0.2 ms</text>
+
+        <!-- Semaphore sync -->
+        <rect x="680" y="440" width="260" height="80" rx="6" fill="rgba(251, 146, 60, 0.2)" stroke="#fb923c" stroke-width="1.5"/>
+        <text x="810" y="465" fill="white" font-size="11" font-weight="600" text-anchor="middle">Dual-Core Sync</text>
+        <text x="810" y="482" fill="#fb923c" font-size="9" text-anchor="middle">FreeRTOS semaphores</text>
+        <text x="810" y="498" fill="#94a3b8" font-size="8" text-anchor="middle">core1_start_sem / core1_done_sem</text>
+        <text x="810" y="512" fill="#94a3b8" font-size="8" text-anchor="middle">16KB worker stack</text>
+
+        <!-- Arrows -->
+        <line x1="140" y1="160" x2="140" y2="198" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="155" y="183" fill="#94a3b8" font-size="8">mmap</text>
+
+        <line x1="230" y1="400" x2="320" y2="215" stroke="#34d399" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+        <text x="270" y="300" fill="#34d399" font-size="8">whh copy</text>
+
+        <line x1="230" y1="260" x2="318" y2="145" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="260" y="200" fill="#94a3b8" font-size="8">wih read</text>
+
+        <line x1="450" y1="215" x2="468" y2="215" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+        <line x1="385" y1="240" x2="385" y2="258" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+        <line x1="450" y1="285" x2="468" y2="285" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+        <line x1="385" y1="310" x2="385" y2="340" stroke="#22d3ee" stroke-width="1.5" stroke-dasharray="3,3"/>
+        <text x="395" y="330" fill="#94a3b8" font-size="7">next token</text>
+
+        <line x1="460" y1="330" x2="460" y2="398" stroke="#fb923c" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrowhead)"/>
+        <text x="470" y="370" fill="#fb923c" font-size="7">sync</text>
+
+        <line x1="580" y1="470" x2="678" y2="130" stroke="#fb7185" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+        <text x="620" y="290" fill="#fb7185" font-size="8">SIMD dot</text>
+
+        <line x1="620" y1="215" x2="678" y2="130" stroke="#fb7185" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+
+        <!-- Legend -->
+        <text x="50" y="560" fill="white" font-size="10" font-weight="600">Legend</text>
+        <rect x="50" y="572" width="16" height="10" rx="2" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="72" y="580" fill="#94a3b8" font-size="8">Core 1 (Arduino)</text>
+        <rect x="200" y="572" width="16" height="10" rx="2" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1"/>
+        <text x="222" y="580" fill="#94a3b8" font-size="8">Core 0 (Worker) / SRAM</text>
+        <rect x="400" y="572" width="16" height="10" rx="2" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="422" y="580" fill="#94a3b8" font-size="8">PSRAM / Benchmark</text>
+        <rect x="580" y="572" width="16" height="10" rx="2" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1"/>
+        <text x="602" y="580" fill="#94a3b8" font-size="8">Flash</text>
+        <rect x="680" y="572" width="16" height="10" rx="2" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1"/>
+        <text x="702" y="580" fill="#94a3b8" font-size="8">ESP-NN SIMD</text>
+        <rect x="820" y="572" width="16" height="10" rx="2" fill="rgba(251, 146, 60, 0.2)" stroke="#fb923c" stroke-width="1"/>
+        <text x="842" y="580" fill="#94a3b8" font-size="8">Sync</text>
+        <line x1="50" y1="595" x2="66" y2="595" stroke="#fb7185" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="72" y="598" fill="#94a3b8" font-size="8">SIMD call</text>
+        <line x1="200" y1="595" x2="216" y2="595" stroke="#34d399" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="222" y="598" fill="#94a3b8" font-size="8">SRAM copy</text>
+        <line x1="400" y1="595" x2="416" y2="595" stroke="#fb923c" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="422" y="598" fill="#94a3b8" font-size="8">Semaphore sync</text>
+
+        <!-- Key stats -->
+        <text x="300" y="620" fill="#34d399" font-size="10" font-weight="600">53.3x total speedup (0.61 -> 32.59 tok/s)</text>
+        <text x="300" y="640" fill="#22d3ee" font-size="9">8 no_std Rust crates on crates.io</text>
+        <text x="300" y="658" fill="#a78bfa" font-size="9">6 GitHub repos — all hardware-verified with BENCH_RECEIPT JSON</text>
+      </svg>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><div class="card-dot emerald"></div><h3>Optimizations</h3></div>
+        <ul>
+          <li>ESP-NN SIMD dot for LSTM gates (novel — ESP-NN was CNN-only)</li>
+          <li>SRAM weight tiling: PSRAM -> internal SRAM (7.6x faster whh)</li>
+          <li>Dual-core gate parallelism via FreeRTOS semaphores</li>
+          <li>Fixed-point quantization with sigmoid/tanh LUT</li>
+          <li>16-byte alignment for SIMD precondition</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-dot cyan"></div><h3>Hardware</h3></div>
+        <ul>
+          <li>ESP32-S3 WROOM N8R8 ($4)</li>
+          <li>Dual-core Xtensa LX7 @ 240MHz</li>
+          <li>8MB octal PSRAM (~100 MB/s)</li>
+          <li>512KB SRAM (~200+ MB/s)</li>
+          <li>ESP-NN vector instructions (16 int8 lanes)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-dot violet"></div><h3>Receipts</h3></div>
+        <ul>
+          <li>BENCH_RECEIPT JSON with SHA256 weights hash</li>
+          <li>Op breakdown: embed, wih, whh, sram_copy, activation, fc</li>
+          <li>p50/p95 latency over 48 measured tokens</li>
+          <li>8 utility output verification checks</li>
+          <li>Claim boundaries documented per variant</li>
+        </ul>
+      </div>
+    </div>
+    <p class="footer">RecursiveIntell / esp32-s3-lstm-proof — 2026-07-01 — MIT OR Apache-2.0</p>
+  </div>
+</body>
+</html>
