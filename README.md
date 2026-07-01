@@ -1,32 +1,36 @@
-# ESP32-S3 On-Device Language Model — 32.59 tok/s
+# ESP32-S3 On-Device Language Model — 32.59 chars/s (~8 BPE tok/s)
 
-A char-level LSTM running at **32.59 tokens/second** on a **$4 ESP32-S3** microcontroller. No GPU. No cloud. Just Rust, C++, and hardware-verified receipts.
+A char-level LSTM running at **32.59 characters/second** (**~8 BPE-equivalent tokens/second**) on a **$4 ESP32-S3** microcontroller. No GPU. No cloud. Just Rust, C++, and hardware-verified receipts.
+
+> **Token convention:** This model generates one character per inference step. Standard LLM benchmarks use BPE/WordPiece tokens. English text averages ~4 chars per BPE token (GPT-2/LLaMA tokenizers); the domain-specific status text here averages ~4.5 chars/token. We report both metrics. When comparing to LLM tok/s benchmarks, use the BPE-equivalent column.
 
 ## Benchmark summary
 
-| Variant | Model | Params | tok/s | ms/token | Speedup | Output correct? |
-|---------|-------|-------:|------:|---------:|--------:|:---:|
-| p0 baseline | H512 mixed | 6.34M | 0.61 | 1636 | 1.00x | yes |
-| p6 fixedpoint+LUT | H512 mixed | 6.34M | 2.66 | 376 | 4.35x | yes |
-| p7 ESP-NN SIMD | H512 mixed | 6.34M | 3.69 | 271 | 6.04x | yes |
-| p12 ESP-NN aligned | H256 all-int8 | 1.60M | 25.07 | 40 | 41.0x | yes |
-| p14 curated | H320 all-int8 | 2.49M | 17.22 | 58 | 28.2x | yes |
-| **p16 SRAM+dual-core** | **H256 all-int8** | **1.60M** | **32.59** | **31** | **53.3x** | **yes** |
+| Variant | Model | Params | chars/s | BPE tok/s | ms/char | Speedup | Output correct? |
+|---------|-------|-------:|--------:|----------:|--------:|--------:|:---:|
+| p0 baseline | H512 mixed | 6.34M | 0.61 | 0.15 | 1636 | 1.00x | yes |
+| p6 fixedpoint+LUT | H512 mixed | 6.34M | 2.66 | 0.67 | 376 | 4.35x | yes |
+| p7 ESP-NN SIMD | H512 mixed | 6.34M | 3.69 | 0.92 | 271 | 6.04x | yes |
+| p12 ESP-NN aligned | H256 all-int8 | 1.60M | 25.07 | 6.27 | 40 | 41.0x | yes |
+| p14 curated | H320 all-int8 | 2.49M | 17.22 | 4.30 | 58 | 28.2x | yes |
+| **p16 SRAM+dual-core** | **H256 all-int8** | **1.60M** | **32.59** | **~8.15** | **31** | **53.3x** | **yes** |
+
+BPE tok/s uses the standard 4.0 chars/token ratio for English. Domain-specific status text (e.g. "check airflow.") averages ~4.5 chars/token, giving ~7.2 BPE tok/s.
 
 All numbers are hardware-verified on ESP32-S3 (Freenove WROOM N8R8, /dev/ttyACM0).
 Every run emits a `BENCH_RECEIPT` JSON with SHA256 weights hash, op breakdown, p50/p95 latency, and utility output verification.
 
 ## Comparison to prior work
 
-| Project | Stars | tok/s | Model | Hardware | Verified? |
-|---------|------:|------:|-------|----------|:---------:|
-| **This work (p16)** | — | **32.59** | 1.6M char-LSTM | ESP32-S3 | hardware receipt |
-| AIWintermuteAI/esp32-llm | 92 | 19.13 | 260K llama2.c | ESP32-S3 | yes |
-| TilelliLab/atome-lm | 54 | ~1 | 944K ternary hybrid | ESP32-WROOM | yes |
+| Project | Stars | Throughput | Model | Hardware | Verified? |
+|---------|------:|-----------:|-------|----------|:---------:|
+| **This work (p16)** | — | **32.59 chars/s (~8 BPE tok/s)** | 1.6M char-LSTM | ESP32-S3 | hardware receipt |
+| AIWintermuteAI/esp32-llm | 92 | 19.13 BPE tok/s | 260K llama2.c | ESP32-S3 | yes |
+| TilelliLab/atome-lm | 54 | ~1 BPE tok/s | 944K ternary hybrid | ESP32-WROOM | yes |
 | harmansingh4163/ESP-32-s3 | 7 | N/A | 42M Llama (2-chip) | 2x ESP32-S3 | yes |
-| ruvllm-esp32 (crate) | 110 dl | 20-50? | 260K | ESP32 | no receipt |
+| ruvllm-esp32 (crate) | 110 dl | 20-50? (unverified) | 260K | ESP32 | no receipt |
 
-This work is **1.70x faster** than the closest verified competitor (AIWintermuteAI) with **6.15x more model capacity** (1.6M vs 260K params).
+Note: AIWintermuteAI and atome-lm use BPE/byte-pair tokenizers, so their tok/s is directly comparable to the BPE-equivalent column. AIWintermuteAI's 19.13 BPE tok/s vs this work's ~8 BPE tok/s — their transformer is faster in BPE tokens per second, but this work's LSTM has 6.15x more parameters (1.6M vs 260K) and generates domain-specific phrases with 100% output accuracy across 8 verified prompts. The architectures serve different purposes: llama2.c generates general text, this LSTM generates constrained domain status/action text.
 
 ## What makes this fast
 
@@ -41,7 +45,7 @@ Three optimizations, each hardware-verified:
 ## Optimization journey (p0 -> p16)
 
 ```
-tok/s
+chars/s
   33 |                                              p16 SRAM+dualcore
      |                                             /
   25 |                          p12 ESP-NN aligned
@@ -53,7 +57,8 @@ tok/s
      |
    1 |  p0 baseline
      +--------------------------------------------------------------
-       0.61     2.66    3.69              17.22   25.07   32.59 tok/s
+       0.61     2.66    3.69              17.22   25.07   32.59 chars/s
+       (~0.15)  (~0.67) (~0.92)          (~4.3)  (~6.3)  (~8.1 BPE tok/s)
 ```
 
 53.3x total speedup from p0 to p16 through systems optimization alone — no architecture change, no model distillation, no hardware change.
