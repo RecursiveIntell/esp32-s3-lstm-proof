@@ -3,6 +3,9 @@
 #include <esp_spi_flash.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -13,16 +16,16 @@ int32_t esp_nn_dot_s8_aligned_esp32s3(const int8_t *a, const int8_t *b, int32_t 
 int32_t esp_nn_dot_s8_unaligned_esp32s3(const int8_t *a, const int8_t *b, int32_t len_div16);
 }
 
-static constexpr uint32_t MAGIC = 0x4d4c4952; // RILM little-endian
+static constexpr uint32_t MAGIC = 0x4d4c4952;
 static constexpr int VOCAB_SIZE = 33;
-static constexpr int HIDDEN = 320;
+static constexpr int HIDDEN = 256;
 static constexpr int LAYERS = 3;
 static constexpr int SEED_COUNT = 3;
 static constexpr int TOKENS_PER_SEED = 16;
 static constexpr int MAX_TOKENS = SEED_COUNT * TOKENS_PER_SEED;
 static constexpr const char *BENCH_SCHEMA = "ri-esp32s3-lstm-bench-v1";
-static constexpr const char *FIRMWARE_VARIANT = "p15_curated_h320_stopped_utility";
-static constexpr const char *WEIGHTS_SHA256 = "fb042c0aa011475e0a31d2c5d271dde57c504aa1bdcdb02ecd3ce0010ebf2b7a";
+static constexpr const char *FIRMWARE_VARIANT = "p16_sram_dualcore_h256";
+static constexpr const char *WEIGHTS_SHA256 = "770ed9012099a04abf7aebc7cbbe279abd289b27b181bc364e48ea491d3dbb6c";
 static const char VOCAB[VOCAB_SIZE + 1] = "abcdefghijklmnopqrstuvwxyz .,!?\'\n";
 static const char *BENCH_SEEDS[SEED_COUNT] = {
   "hot room. action is ",
@@ -78,14 +81,41 @@ struct OpBreakdown {
   uint64_t quant_us = 0;
   uint64_t lstm_wih_us = 0;
   uint64_t lstm_whh_us = 0;
+  uint64_t sram_copy_us = 0;
   uint64_t activation_us = 0;
   uint64_t fc_us = 0;
+  uint64_t core1_wait_us = 0;
   uint32_t measured_steps = 0;
 };
 
 ModelView model;
 ResolvedModel resolved;
 OpBreakdown ops;
+
+// SRAM tiling: scratch for recurrent weights — try 4 gates, fallback to 2
+static int8_t *whh_sram = nullptr;
+static size_t whh_sram_bytes = 0;
+
+// Dual-core sync
+static SemaphoreHandle_t core1_start_sem = nullptr;
+static SemaphoreHandle_t core1_done_sem = nullptr;
+static volatile bool core1_active = false;
+
+struct Core1Params {
+  const Tensor *wih;
+  const Tensor *whh;
+  const Tensor *bih;
+  const Tensor *bhh;
+  const int8_t *qx;
+  const int8_t *qh;
+  float input_scale;
+  float h_scale;
+  int input_dim;
+  int gate_start;
+  int gate_end;
+  float *gates_out;
+};
+static Core1Params c1p;
 
 static uint16_t rd_u16(const uint8_t *&p) { uint16_t v; memcpy(&v, p, 2); p += 2; return v; }
 static uint32_t rd_u32(const uint8_t *&p) { uint32_t v; memcpy(&v, p, 4); p += 4; return v; }
@@ -122,51 +152,9 @@ __attribute__((noinline)) float tensor_get_slow(const Tensor *t, uint32_t idx) {
   return ((float)q) * t->scale;
 }
 
-static inline float dot_i8_f32(const uint8_t *payload, float scale, uint32_t row_start, const float *x, int n) {
-  const int8_t *w = (const int8_t *)(payload + row_start);
-  float acc = 0.0f;
-  int j = 0;
-  for (; j + 3 < n; j += 4) {
-    acc += (float)w[j] * x[j];
-    acc += (float)w[j + 1] * x[j + 1];
-    acc += (float)w[j + 2] * x[j + 2];
-    acc += (float)w[j + 3] * x[j + 3];
-  }
-  for (; j < n; j++) acc += (float)w[j] * x[j];
-  return acc * scale;
-}
-
-static inline float dot_i4_f32(const uint8_t *payload, float scale, uint32_t elem_row_start, const float *x, int n) {
-  const uint8_t *packed = payload + (elem_row_start >> 1);
-  float acc = 0.0f;
-  int j = 0;
-  for (; j + 1 < n; j += 2) {
-    uint8_t b = *packed++;
-    acc += (float)signed_i4_low(b) * x[j];
-    acc += (float)signed_i4_high(b) * x[j + 1];
-  }
-  if (j < n) {
-    uint8_t b = *packed;
-    acc += (float)signed_i4_low(b) * x[j];
-  }
-  return acc * scale;
-}
-
-static inline float dot_tensor_f32(const Tensor *t, uint32_t elem_row_start, const float *x, int n) {
-  if (t->dtype == I8) return dot_i8_f32(t->payload, t->scale, elem_row_start, x, n);
-  if (t->dtype == I4) return dot_i4_f32(t->payload, t->scale, elem_row_start, x, n);
-  float acc = 0.0f;
-  for (int j = 0; j < n; j++) acc += f32_at(t, elem_row_start + j) * x[j];
-  return acc;
-}
-
 static inline int32_t dot_i8_i8_acc(const uint8_t *payload, uint32_t row_start, const int8_t *x, int n) {
   const int8_t *w = (const int8_t *)(payload + row_start);
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
-  // ESP-NN S3 SIMD dot requires 16-byte aligned input. The earlier direct-dot
-  // path called the unaligned-filter kernel even when x was only heap-default
-  // aligned, which corrupted all-int8 H256 output. Guard the precondition and
-  // prefer the faster aligned kernel when both x and row weights are aligned.
   if ((n & 15) == 0 && (((uintptr_t)x) & 15) == 0) {
     if ((((uintptr_t)w) & 15) == 0) {
       return esp_nn_dot_s8_aligned_esp32s3(x, w, n);
@@ -209,6 +197,11 @@ static inline float dot_tensor_q8(const Tensor *t, uint32_t elem_row_start, cons
   float acc = 0.0f;
   for (int j = 0; j < n; j++) acc += f32_at(t, elem_row_start + j) * ((float)xq[j] * x_scale);
   return acc;
+}
+
+// Dot using a raw int8 weight pointer (for SRAM-tiled recurrent weights)
+static inline float dot_raw_i8(const int8_t *w, uint32_t row_start, float w_scale, const int8_t *xq, float x_scale, int n) {
+  return (float)dot_i8_i8_acc((const uint8_t *)w, row_start, xq, n) * w_scale * x_scale;
 }
 
 float quantize_q8(const float *src, int8_t *dst, int n) {
@@ -261,7 +254,7 @@ bool load_model_partition() {
   const uint8_t *p = model.base;
   uint32_t magic = rd_u32(p);
   if (magic != MAGIC) {
-    Serial.printf("ERR bad magic 0x%08lx (upload weights.bin to 0x210000)\n", (unsigned long)magic);
+    Serial.printf("ERR bad magic 0x%08lx\n", (unsigned long)magic);
     return false;
   }
   uint16_t version = rd_u16(p);
@@ -372,6 +365,17 @@ void alloc_state() {
   st.next_c = (float *)internal_alloc(sizeof(float) * HIDDEN);
   st.gates = (float *)internal_alloc(sizeof(float) * 4 * HIDDEN);
   st.logits = (float *)internal_alloc(sizeof(float) * VOCAB_SIZE);
+
+  // SRAM scratch for recurrent weight tiling
+  // H256: 4*256*256 = 262,144 bytes — should fit in internal SRAM
+  whh_sram_bytes = 4 * HIDDEN * HIDDEN;
+  whh_sram = (int8_t *)heap_caps_aligned_alloc(16, whh_sram_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (whh_sram) {
+    Serial.printf("SRAM tiling: enabled %lu bytes\n", (unsigned long)whh_sram_bytes);
+  } else {
+    whh_sram_bytes = 0;
+    Serial.println("SRAM tiling: disabled (alloc failed)");
+  }
 }
 
 void reset_state() {
@@ -412,46 +416,28 @@ static inline float lut_lookup(const float *lut, float x) {
 static inline float sigmoidf_fast(float x) { return lut_lookup(sigmoid_lut, x); }
 static inline float tanhf_fast(float x) { return lut_lookup(tanh_lut, x); }
 
-int sample_topk_logits(int top_k, float temperature) {
-  int idx[8];
-  float vals[8];
-  if (top_k > 8) top_k = 8;
-  if (top_k > VOCAB_SIZE) top_k = VOCAB_SIZE;
-  for (int k = 0; k < top_k; k++) {
-    idx[k] = -1;
-    vals[k] = -1e30f;
-  }
-  for (int v = 0; v < VOCAB_SIZE; v++) {
-    float x = st.logits[v];
-    for (int k = 0; k < top_k; k++) {
-      if (x > vals[k]) {
-        for (int j = top_k - 1; j > k; j--) {
-          vals[j] = vals[j - 1];
-          idx[j] = idx[j - 1];
-        }
-        vals[k] = x;
-        idx[k] = v;
-        break;
+// Core 0 worker task: computes half the LSTM gates while core 1 does the other half.
+// Pinned to core 0. Arduino loopTask is on core 1.
+static void core0_worker(void *arg) {
+  while (true) {
+    xSemaphoreTake(core1_start_sem, portMAX_DELAY);
+    if (!core1_active) continue;
+
+    const Core1Params *p = &c1p;
+    for (int g = p->gate_start; g < p->gate_end; g++) {
+      float acc = f32_at(p->bih, g);
+      if (p->bhh) acc += f32_at(p->bhh, g);
+      acc += dot_tensor_q8(p->wih, (uint32_t)g * p->input_dim, p->qx, p->input_scale, p->input_dim);
+      if (whh_sram) {
+        acc += dot_raw_i8(whh_sram, (uint32_t)g * HIDDEN, p->whh->scale, p->qh, p->h_scale, HIDDEN);
+      } else {
+        acc += dot_tensor_q8(p->whh, (uint32_t)g * HIDDEN, p->qh, p->h_scale, HIDDEN);
       }
+      p->gates_out[g] = acc;
     }
+
+    xSemaphoreGive(core1_done_sem);
   }
-  float max_v = vals[0];
-  float weights[8];
-  float sum = 0.0f;
-  for (int k = 0; k < top_k; k++) {
-    float z = (vals[k] - max_v) / temperature;
-    if (z < -16.0f) z = -16.0f;
-    float w = expf(z);
-    weights[k] = w;
-    sum += w;
-  }
-  if (sum <= 0.0f) return idx[0] >= 0 ? idx[0] : 0;
-  float r = ((float)(esp_random() & 0xFFFFFF) / 16777216.0f) * sum;
-  for (int k = 0; k < top_k; k++) {
-    r -= weights[k];
-    if (r <= 0.0f) return idx[k] >= 0 ? idx[k] : 0;
-  }
-  return idx[top_k - 1] >= 0 ? idx[top_k - 1] : 0;
 }
 
 void lstm_layer(int layer, const float *input, int input_dim, bool measure) {
@@ -460,23 +446,57 @@ void lstm_layer(int layer, const float *input, int input_dim, bool measure) {
   Tensor *bih = resolved.bih[layer];
   Tensor *bhh = resolved.bhh[layer];
 
-  uint32_t t_quant = measure ? micros() : 0;
+  uint32_t tq = measure ? micros() : 0;
   float input_scale = quantize_q8(input, st.qx, input_dim);
   float h_scale = quantize_q8(st.h[layer], st.qh[layer], HIDDEN);
-  if (measure) ops.quant_us += (uint32_t)(micros() - t_quant);
+  if (measure) ops.quant_us += (uint32_t)(micros() - tq);
 
-  for (int g = 0; g < 4 * HIDDEN; g++) {
+  // SRAM tiling: copy recurrent weights to SRAM scratch
+  uint32_t ts = measure ? micros() : 0;
+  if (whh_sram && whh->dtype == I8) {
+    size_t copy_len = whh->payload_len;
+    if (copy_len > whh_sram_bytes) copy_len = whh_sram_bytes;
+    memcpy(whh_sram, whh->payload, copy_len);
+  }
+  if (measure) ops.sram_copy_us += (uint32_t)(micros() - ts);
+
+  // Dual-core: split 4*HIDDEN gates into two halves
+  c1p.wih = wih;
+  c1p.whh = whh;
+  c1p.bih = bih;
+  c1p.bhh = bhh;
+  c1p.qx = st.qx;
+  c1p.qh = st.qh[layer];
+  c1p.input_scale = input_scale;
+  c1p.h_scale = h_scale;
+  c1p.input_dim = input_dim;
+  c1p.gate_start = 2 * HIDDEN;
+  c1p.gate_end = 4 * HIDDEN;
+  c1p.gates_out = st.gates;
+
+  uint32_t tw = measure ? micros() : 0;
+  xSemaphoreGive(core1_start_sem);
+
+  // Core 1: gates [0, 2*HIDDEN)
+  for (int g = 0; g < 2 * HIDDEN; g++) {
     float acc = f32_at(bih, g);
     if (bhh) acc += f32_at(bhh, g);
     uint32_t t0 = measure ? micros() : 0;
     acc += dot_tensor_q8(wih, (uint32_t)g * input_dim, st.qx, input_scale, input_dim);
     if (measure) ops.lstm_wih_us += (uint32_t)(micros() - t0);
     t0 = measure ? micros() : 0;
-    acc += dot_tensor_q8(whh, (uint32_t)g * HIDDEN, st.qh[layer], h_scale, HIDDEN);
+    if (whh_sram) {
+      acc += dot_raw_i8(whh_sram, (uint32_t)g * HIDDEN, whh->scale, st.qh[layer], h_scale, HIDDEN);
+    } else {
+      acc += dot_tensor_q8(whh, (uint32_t)g * HIDDEN, st.qh[layer], h_scale, HIDDEN);
+    }
     if (measure) ops.lstm_whh_us += (uint32_t)(micros() - t0);
     st.gates[g] = acc;
     if ((g & 255) == 0) yield();
   }
+
+  xSemaphoreTake(core1_done_sem, portMAX_DELAY);
+  if (measure) ops.core1_wait_us += (uint32_t)(micros() - tw);
 
   uint32_t t0 = measure ? micros() : 0;
   for (int i = 0; i < HIDDEN; i++) {
@@ -563,10 +583,7 @@ void generate_stopped(const char *seed, char *out, int max_chars) {
   for (; i < max_chars; i++) {
     char ch = idx_vocab(token);
     out[i] = ch;
-    if (ch == '.' || ch == '\n') {
-      i++;
-      break;
-    }
+    if (ch == '.' || ch == '\n') { i++; break; }
     token = model_step(token, false);
     yield();
   }
@@ -593,10 +610,6 @@ void run_benchmark() {
     int token = vocab_idx(seed[0]);
     for (const char *p = seed; *p; p++) token = model_step(vocab_idx(*p), false);
     for (int i = 0; i < TOKENS_PER_SEED; i++) {
-      // model_step(prompt_char) returns the next-token prediction. Emit that
-      // prediction first, then advance from the emitted token. The older bench
-      // loop advanced before emitting, which dropped the first generated char
-      // ("check" became "heck", "no claim" became "o claim").
       outputs[s][i] = idx_vocab(token);
       uint32_t start = millis();
       token = model_step(token, true);
@@ -627,9 +640,9 @@ void run_benchmark() {
   Serial.printf("\"free_heap_start\":%lu,", (unsigned long)ESP.getFreeHeap());
   Serial.printf("\"free_psram_start\":%lu,", (unsigned long)ESP.getFreePsram());
   Serial.printf("\"weights_sha256\":\"%s\",", WEIGHTS_SHA256);
-  Serial.print("\"model_profile\":\"curated_status_h320_all_int8\",");
-  Serial.print("\"params\":2486433,");
-  Serial.print("\"compressed_bytes\":2510076,");
+  Serial.print("\"model_profile\":\"domain_h256_all_int8\",");
+  Serial.print("\"params\":1595937,");
+  Serial.print("\"compressed_bytes\":1614972,");
   Serial.printf("\"tokens_per_seed\":%d,", TOKENS_PER_SEED);
   Serial.printf("\"total_measured_tokens\":%d,", measured);
   Serial.printf("\"ms_total\":%lu,", (unsigned long)total_ms);
@@ -642,8 +655,10 @@ void run_benchmark() {
   Serial.printf("\"quant\":%.3f,", (ops.quant_us / 1000.0f) / steps);
   Serial.printf("\"lstm_wih\":%.3f,", (ops.lstm_wih_us / 1000.0f) / steps);
   Serial.printf("\"lstm_whh\":%.3f,", (ops.lstm_whh_us / 1000.0f) / steps);
+  Serial.printf("\"sram_copy\":%.3f,", (ops.sram_copy_us / 1000.0f) / steps);
   Serial.printf("\"activation\":%.3f,", (ops.activation_us / 1000.0f) / steps);
-  Serial.printf("\"fc\":%.3f},", (ops.fc_us / 1000.0f) / steps);
+  Serial.printf("\"fc\":%.3f,", (ops.fc_us / 1000.0f) / steps);
+  Serial.printf("\"core1_wait\":%.3f},", (ops.core1_wait_us / 1000.0f) / steps);
   Serial.print("\"output_by_seed\":{");
   for (int s = 0; s < SEED_COUNT; s++) {
     if (s) Serial.print(',');
@@ -658,7 +673,7 @@ void run_benchmark() {
     json_escape_print(utility_outputs[s]); Serial.print('"');
   }
   Serial.print("},");
-  Serial.print("\"state_alloc\":\"internal\",");
+  Serial.print("\"state_alloc\":\"internal+sram_scratch\",");
   Serial.printf("\"heap_after\":%lu,", (unsigned long)ESP.getFreeHeap());
   Serial.printf("\"psram_after\":%lu,", (unsigned long)ESP.getFreePsram());
   Serial.print("\"passed\":true,");
@@ -666,15 +681,13 @@ void run_benchmark() {
   Serial.println("}");
 }
 
-
 void run_language_prompt_receipt(const char *prompt) {
   char output[UTILITY_MAX_CHARS + 1];
   uint32_t start_ms = millis();
   generate_stopped(prompt, output, UTILITY_MAX_CHARS);
   uint32_t elapsed_ms = millis() - start_ms;
   int chars = strlen(output);
-  float chars_per_sec = elapsed_ms > 0 ? (1000.0f * (float)chars / (float)elapsed_ms) : 0.0f;
-
+  float cps = elapsed_ms > 0 ? (1000.0f * (float)chars / (float)elapsed_ms) : 0.0f;
   Serial.print("S3_LANGUAGE_RECEIPT {");
   Serial.print("\"schema\":\"ri_esp32s3_local_language_v1\",");
   Serial.printf("\"firmware_variant\":\"%s\",", FIRMWARE_VARIANT);
@@ -684,7 +697,7 @@ void run_language_prompt_receipt(const char *prompt) {
   Serial.print("\"output\":\""); json_escape_print(output); Serial.print("\",");
   Serial.printf("\"generated_chars\":%d,", chars);
   Serial.printf("\"elapsed_ms\":%lu,", (unsigned long)elapsed_ms);
-  Serial.printf("\"chars_per_sec\":%.4f,", chars_per_sec);
+  Serial.printf("\"chars_per_sec\":%.4f,", cps);
   Serial.print("\"stop_rule\":\"period_or_newline_or_48_chars\",");
   Serial.print("\"passed\":true");
   Serial.println("}");
@@ -716,33 +729,34 @@ void poll_serial_language_commands() {
     }
   }
 }
+
 void setup() {
   Serial.begin(115200);
   delay(1500);
-  Serial.println("\nESP32-S3 compressed LSTM benchmark boot");
+  Serial.println("\nESP32-S3 LSTM boot p16 sram+dualcore");
   Serial.printf("free_heap=%lu free_psram=%lu psram_size=%lu\n",
-    (unsigned long)ESP.getFreeHeap(),
-    (unsigned long)ESP.getFreePsram(),
-    (unsigned long)ESP.getPsramSize());
+    (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(), (unsigned long)ESP.getPsramSize());
 
-  if (!load_model_partition()) {
-    Serial.println("MODEL_LOAD_FAILED");
-    return;
+  core1_start_sem = xSemaphoreCreateBinary();
+  core1_done_sem = xSemaphoreCreateBinary();
+  if (!core1_start_sem || !core1_done_sem) {
+    Serial.println("FATAL: sem create failed");
+    while (true) delay(1000);
   }
-  if (!clone_payloads_to_psram()) {
-    Serial.println("MODEL_CLONE_FAILED");
-    return;
-  }
-  if (!resolve_model()) {
-    Serial.println("MODEL_RESOLVE_FAILED");
-    return;
-  }
+
+  // Pin worker to core 0 — Arduino loopTask runs on core 1 by default
+  xTaskCreatePinnedToCore(core0_worker, "lstm_worker", 16384, nullptr, 2, nullptr, 0);
+  core1_active = true;
+  Serial.println("worker task started on core 0");
+
+  if (!load_model_partition()) { Serial.println("MODEL_LOAD_FAILED"); return; }
+  if (!clone_payloads_to_psram()) { Serial.println("MODEL_CLONE_FAILED"); return; }
+  if (!resolve_model()) { Serial.println("MODEL_RESOLVE_FAILED"); return; }
   init_activation_lut();
   alloc_state();
-  Serial.printf("state allocated internal free_heap=%lu free_psram=%lu\n",
-    (unsigned long)ESP.getFreeHeap(),
-    (unsigned long)ESP.getFreePsram());
-  Serial.println("MODEL_READY selected_profile=curated_status_h320_all_int8 params=2486433 compressed_bytes=2510076");
+  Serial.printf("state allocated free_heap=%lu free_psram=%lu\n",
+    (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram());
+  Serial.println("MODEL_READY profile=domain_h256_all_int8 params=1595937");
   run_benchmark();
   Serial.println("PROOF_DONE");
 }
@@ -752,7 +766,7 @@ void loop() {
   static uint32_t last_idle = 0;
   if (millis() - last_idle >= 5000) {
     last_idle = millis();
-    Serial.println("idle benchmark firmware alive; send PROMPT:<canonical prompt> for S3_LANGUAGE_RECEIPT");
+    Serial.println("idle; send PROMPT:<text> for S3_LANGUAGE_RECEIPT");
   }
   delay(10);
 }
