@@ -1,0 +1,15 @@
+.pio/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.bin
+*.elf
+*.map
+weights*.bin
+weights*.hex
+runs/
+analysis/
+*.log
+.pioenvs/
+.piolibdeps/

@@ -1,0 +1,39 @@
+{
+  "blockers": [],
+  "board": "esp32s3",
+  "compressed_bytes": 2510076,
+  "firmware_variant": "p13_curated_h320_all_int8_espnn_aligned_guarded",
+  "free_heap_start": 318368,
+  "free_psram_start": 5907187,
+  "heap_after": 318104,
+  "host_observed_at": "2026-06-30T22:48:49-0500",
+  "model_profile": "curated_status_h320_all_int8",
+  "ms_per_token_mean": 58.0,
+  "ms_per_token_p50": 58,
+  "ms_per_token_p95": 58,
+  "ms_total": 5607,
+  "op_breakdown_ms_per_token": {
+    "activation": 0.794,
+    "embed": 0.054,
+    "fc": 0.231,
+    "lstm_whh": 24.448,
+    "lstm_wih": 24.427,
+    "quant": 0.255
+  },
+  "output_by_seed": {
+    "hot room. action is ": "heck airflow.\nre",
+    "missing sensor. action is ": "o claim.\nreading",
+    "the receipt says ": "eat warning. act"
+  },
+  "params": 2486433,
+  "passed": true,
+  "psram_after": 5907187,
+  "psram_size": 8386151,
+  "run_index": 1,
+  "schema": "ri-esp32s3-lstm-bench-v1",
+  "state_alloc": "internal",
+  "tokens_per_sec": 17.2414,
+  "tokens_per_seed": 16,
+  "total_measured_tokens": 48,
+  "weights_sha256": "fb042c0aa011475e0a31d2c5d271dde57c504aa1bdcdb02ecd3ce0010ebf2b7a"
+}

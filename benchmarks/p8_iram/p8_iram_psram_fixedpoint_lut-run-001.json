@@ -1,0 +1,39 @@
+{
+  "blockers": [],
+  "board": "esp32s3",
+  "compressed_bytes": 4785276,
+  "firmware_variant": "p8_iram_psram_fixedpoint_lut",
+  "free_heap_start": 288992,
+  "free_psram_start": 3650419,
+  "heap_after": 288728,
+  "host_observed_at": "2026-06-30T15:18:59-0500",
+  "model_profile": "mixed_lstm_safe",
+  "ms_per_token_mean": 376.19,
+  "ms_per_token_p50": 376,
+  "ms_per_token_p95": 377,
+  "ms_total": 31918,
+  "op_breakdown_ms_per_token": {
+    "activation": 2.105,
+    "embed": 0.042,
+    "fc": 1.245,
+    "lstm_whh": 139.067,
+    "lstm_wih": 220.297,
+    "quant": 0.522
+  },
+  "output_by_seed": {
+    "once upon a ": "ime, there was a",
+    "sensor says ": "hat day.\nendofte",
+    "the esp32 sees ": "arm air and said"
+  },
+  "params": 6337569,
+  "passed": true,
+  "psram_after": 3650419,
+  "psram_size": 8386151,
+  "run_index": 1,
+  "schema": "ri-esp32s3-lstm-bench-v1",
+  "state_alloc": "internal",
+  "tokens_per_sec": 2.6582,
+  "tokens_per_seed": 16,
+  "total_measured_tokens": 48,
+  "weights_sha256": "709ff8a921612f0d1a075ce586d3355c895b16a100d12d8f74bb3367cdf83c61"
+}

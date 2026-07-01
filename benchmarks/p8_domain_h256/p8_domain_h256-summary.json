@@ -1,0 +1,131 @@
+{
+  "aggregate": {
+    "ms_per_token_max": 74.12,
+    "ms_per_token_mean": 74.12,
+    "ms_per_token_min": 74.12,
+    "runs": 3,
+    "tokens_per_sec_max": 13.4907,
+    "tokens_per_sec_mean": 13.490699999999999,
+    "tokens_per_sec_min": 13.4907
+  },
+  "receipts": [
+    {
+      "blockers": [],
+      "board": "esp32s3",
+      "compressed_bytes": 1213308,
+      "firmware_variant": "p8_domain_h256_esp_nn_s3_dot_recurrent",
+      "free_heap_start": 321152,
+      "free_psram_start": 7206291,
+      "heap_after": 320808,
+      "host_observed_at": "2026-06-30T21:51:10-0500",
+      "model_profile": "domain_h256_mixed_lstm_safe",
+      "ms_per_token_mean": 74.12,
+      "ms_per_token_p50": 74,
+      "ms_per_token_p95": 75,
+      "ms_total": 7562,
+      "op_breakdown_ms_per_token": {
+        "activation": 0.663,
+        "embed": 0.021,
+        "fc": 0.49,
+        "lstm_whh": 16.312,
+        "lstm_wih": 50.206,
+        "quant": 0.208
+      },
+      "output_by_seed": {
+        "hot room. action is ": "  resan son s s ",
+        "missing sensor. action is ": "  san s ses sas ",
+        "the receipt says ": " ses s ses s s s"
+      },
+      "params": 1595937,
+      "passed": true,
+      "psram_after": 7206291,
+      "psram_size": 8386183,
+      "run_index": 1,
+      "schema": "ri-esp32s3-lstm-bench-v1",
+      "state_alloc": "internal",
+      "tokens_per_sec": 13.4907,
+      "tokens_per_seed": 16,
+      "total_measured_tokens": 48,
+      "weights_sha256": "7810ccad211abcca10f6cd5761bd4adc1a2afafea3e0d14110d7ee4cec81a8b3"
+    },
+    {
+      "blockers": [],
+      "board": "esp32s3",
+      "compressed_bytes": 1213308,
+      "firmware_variant": "p8_domain_h256_esp_nn_s3_dot_recurrent",
+      "free_heap_start": 321152,
+      "free_psram_start": 7206291,
+      "heap_after": 320808,
+      "host_observed_at": "2026-06-30T21:51:20-0500",
+      "model_profile": "domain_h256_mixed_lstm_safe",
+      "ms_per_token_mean": 74.12,
+      "ms_per_token_p50": 74,
+      "ms_per_token_p95": 75,
+      "ms_total": 7562,
+      "op_breakdown_ms_per_token": {
+        "activation": 0.664,
+        "embed": 0.021,
+        "fc": 0.49,
+        "lstm_whh": 16.308,
+        "lstm_wih": 50.206,
+        "quant": 0.207
+      },
+      "output_by_seed": {
+        "hot room. action is ": "  resan son s s ",
+        "missing sensor. action is ": "  san s ses sas ",
+        "the receipt says ": " ses s ses s s s"
+      },
+      "params": 1595937,
+      "passed": true,
+      "psram_after": 7206291,
+      "psram_size": 8386183,
+      "run_index": 2,
+      "schema": "ri-esp32s3-lstm-bench-v1",
+      "state_alloc": "internal",
+      "tokens_per_sec": 13.4907,
+      "tokens_per_seed": 16,
+      "total_measured_tokens": 48,
+      "weights_sha256": "7810ccad211abcca10f6cd5761bd4adc1a2afafea3e0d14110d7ee4cec81a8b3"
+    },
+    {
+      "blockers": [],
+      "board": "esp32s3",
+      "compressed_bytes": 1213308,
+      "firmware_variant": "p8_domain_h256_esp_nn_s3_dot_recurrent",
+      "free_heap_start": 321152,
+      "free_psram_start": 7206291,
+      "heap_after": 320808,
+      "host_observed_at": "2026-06-30T21:51:29-0500",
+      "model_profile": "domain_h256_mixed_lstm_safe",
+      "ms_per_token_mean": 74.12,
+      "ms_per_token_p50": 74,
+      "ms_per_token_p95": 75,
+      "ms_total": 7562,
+      "op_breakdown_ms_per_token": {
+        "activation": 0.663,
+        "embed": 0.021,
+        "fc": 0.49,
+        "lstm_whh": 16.31,
+        "lstm_wih": 50.209,
+        "quant": 0.207
+      },
+      "output_by_seed": {
+        "hot room. action is ": "  resan son s s ",
+        "missing sensor. action is ": "  san s ses sas ",
+        "the receipt says ": " ses s ses s s s"
+      },
+      "params": 1595937,
+      "passed": true,
+      "psram_after": 7206291,
+      "psram_size": 8386183,
+      "run_index": 3,
+      "schema": "ri-esp32s3-lstm-bench-v1",
+      "state_alloc": "internal",
+      "tokens_per_sec": 13.4907,
+      "tokens_per_seed": 16,
+      "total_measured_tokens": 48,
+      "weights_sha256": "7810ccad211abcca10f6cd5761bd4adc1a2afafea3e0d14110d7ee4cec81a8b3"
+    }
+  ],
+  "variant": "p8_domain_h256"
+}

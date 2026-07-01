@@ -1,0 +1,5 @@
+{
+  "name": "esp-nn-fc-probe",
+  "version": "0.1.0",
+  "description": "Standalone ESP-NN FC kernel benchmark for ESP32-S3"
+}

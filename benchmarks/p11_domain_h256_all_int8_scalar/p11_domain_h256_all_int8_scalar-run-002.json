@@ -1,0 +1,39 @@
+{
+  "blockers": [],
+  "board": "esp32s3",
+  "compressed_bytes": 1614972,
+  "firmware_variant": "p11_domain_h256_all_int8_greedy_scalar",
+  "free_heap_start": 329632,
+  "free_psram_start": 6796147,
+  "heap_after": 329368,
+  "host_observed_at": "2026-06-30T21:56:28-0500",
+  "model_profile": "domain_h256_all_int8",
+  "ms_per_token_mean": 73.79,
+  "ms_per_token_p50": 74,
+  "ms_per_token_p95": 74,
+  "ms_total": 7520,
+  "op_breakdown_ms_per_token": {
+    "activation": 0.643,
+    "embed": 0.044,
+    "fc": 0.354,
+    "lstm_whh": 32.185,
+    "lstm_wih": 34.125,
+    "quant": 0.206
+  },
+  "output_by_seed": {
+    "hot room. action is ": "heck airflow.\nth",
+    "missing sensor. action is ": "o claim.\nthe rec",
+    "the receipt says ": "tale reading.\nth"
+  },
+  "params": 1595937,
+  "passed": true,
+  "psram_after": 6796147,
+  "psram_size": 8386151,
+  "run_index": 2,
+  "schema": "ri-esp32s3-lstm-bench-v1",
+  "state_alloc": "internal",
+  "tokens_per_sec": 13.5517,
+  "tokens_per_seed": 16,
+  "total_measured_tokens": 48,
+  "weights_sha256": "770ed9012099a04abf7aebc7cbbe279abd289b27b181bc364e48ea491d3dbb6c"
+}
