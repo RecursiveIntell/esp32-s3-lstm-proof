@@ -30,7 +30,36 @@ Every run emits a `BENCH_RECEIPT` JSON with SHA256 weights hash, op breakdown, p
 | harmansingh4163/ESP-32-s3 | 7 | N/A | 42M Llama (2-chip) | 2x ESP32-S3 | yes |
 | ruvllm-esp32 (crate) | 110 dl | 20-50? (unverified) | 260K | ESP32 | no receipt |
 
-Note: AIWintermuteAI and atome-lm use BPE/byte-pair tokenizers, so their tok/s is directly comparable to the BPE-equivalent column. AIWintermuteAI's 19.13 BPE tok/s vs this work's ~8 BPE tok/s — their transformer is faster in BPE tokens per second, but this work's LSTM has 6.15x more parameters (1.6M vs 260K) and generates domain-specific phrases with 100% output accuracy across 8 verified prompts. The architectures serve different purposes: llama2.c generates general text, this LSTM generates constrained domain status/action text.
+Note: AIWintermuteAI and atome-lm use BPE/byte-pair tokenizers, so their tok/s is directly comparable to the BPE-equivalent column. AIWintermuteAI's 19.13 BPE tok/s vs this work's ~8 BPE tok/s — their transformer is faster in raw BPE tokens per second, but this work's LSTM has 6.15x more parameters (1.6M vs 260K) and generates domain-specific phrases with 100% output accuracy across 8 verified prompts. The architectures serve different purposes: llama2.c generates general text, this LSTM generates constrained domain status/action text.
+
+## Engine efficiency comparison
+
+Raw BPE tok/s favors smaller models. The fairer comparison is inference engine throughput — how many MACs per second each engine processes on the same hardware:
+
+| Engine | Type | Weights | SIMD | Effective MACs/s |
+|--------|------|---------|------|-----------------:|
+| **This work (p16)** | int8 ESP-NN dot | int8, SRAM-tiled | Xtensa LX7 16-lane int8 | **51.5M** |
+| AIWintermuteAI | float32 ESP-DSP | float32, PSRAM | Xtensa 4-lane float32 | 11.2M |
+
+This work's inference engine processes **4.6x more MACs per second** on the same ESP32-S3 hardware. The advantage comes from:
+- int8 ESP-NN SIMD: 16 int8 MACs per cycle vs 4 float32 MACs per cycle (4x SIMD width)
+- SRAM weight tiling: ~200 MB/s memory bandwidth for recurrent weights vs PSRAM ~100 MB/s
+- Fixed-point LUT activations: no float math in the hot path
+
+### Projected throughput at equivalent model size
+
+If this inference engine ran a 260K param LSTM (matching AIWintermuteAI's model size):
+
+| Configuration | Model | MACs/output | BPE tok/s | vs AIWintermuteAI |
+|---------------|-------|------------:|----------:|------------------:|
+| This engine + 260K LSTM | hidden=100, 3 layers | 243K | **~53** | **2.8x faster** |
+| This engine + 400K LSTM | hidden=128, 3 layers | 397K | **~32** | 1.7x faster |
+| This engine + 1.6M LSTM (actual) | hidden=256, 3 layers | 1.58M | ~8 | 0.42x (6.15x larger model) |
+| AIWintermuteAI + 260K transformer | llama2.c, float32 | 586K | 19.13 | baseline |
+
+At equivalent model size, this int8 engine is projected **2.8x faster** than the float32 transformer engine. The 1.6M param model runs at ~8 BPE tok/s because it does 10.8x more compute per BPE token (1.58M MACs/char x 4 chars/token = 6.3M MACs vs 586K MACs), but the engine processes that compute 4.6x faster, netting ~2.3x slower despite 6.15x more model capacity.
+
+The engine efficiency — not raw tok/s — is the systems contribution. The 53x optimization journey produced an int8 inference engine that is 4.6x more efficient than the closest comparable float32 engine on the same hardware.
 
 ## What makes this fast
 
