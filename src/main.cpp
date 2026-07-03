@@ -80,20 +80,53 @@ int32_t esp_nn_dot_s8_unaligned_esp32s3(const int8_t *a, const int8_t *b, int32_
 }
 
 static constexpr uint32_t MAGIC = 0x4d4c4952;
-static constexpr int VOCAB_SIZE = 33;
-static constexpr int HIDDEN = 256;
-static constexpr int LAYERS = 3;
+#ifndef RI_VOCAB_SIZE
+#define RI_VOCAB_SIZE 33
+#endif
+#ifndef RI_HIDDEN
+#define RI_HIDDEN 256
+#endif
+#ifndef RI_LAYERS
+#define RI_LAYERS 3
+#endif
+#ifndef RI_FIRMWARE_VARIANT
+#define RI_FIRMWARE_VARIANT "p22_i4_wih_whh_simd_h256"
+#endif
+#ifndef RI_WEIGHTS_SHA256
+#define RI_WEIGHTS_SHA256 "770ed9012099a04abf7aebc7cbbe279abd289b27b181bc364e48ea491d3dbb6c"
+#endif
+#ifndef RI_MODEL_PROFILE
+#define RI_MODEL_PROFILE "domain_h256_all_int8"
+#endif
+#ifndef RI_MODEL_PARAMS
+#define RI_MODEL_PARAMS 1595937
+#endif
+#ifndef RI_COMPRESSED_BYTES
+#define RI_COMPRESSED_BYTES 1614972
+#endif
+#ifndef RI_TINYSTORIES_MODE
+#define RI_TINYSTORIES_MODE 0
+#endif
+static constexpr int VOCAB_SIZE = RI_VOCAB_SIZE;
+static constexpr int HIDDEN = RI_HIDDEN;
+static constexpr int LAYERS = RI_LAYERS;
 static constexpr int SEED_COUNT = 3;
 static constexpr int TOKENS_PER_SEED = 16;
 static constexpr int MAX_TOKENS = SEED_COUNT * TOKENS_PER_SEED;
 static constexpr const char *BENCH_SCHEMA = "ri-esp32s3-lstm-bench-v1";
-static constexpr const char *FIRMWARE_VARIANT = "p22_i4_wih_whh_simd_h256";
-static constexpr const char *WEIGHTS_SHA256 = "770ed9012099a04abf7aebc7cbbe279abd289b27b181bc364e48ea491d3dbb6c";
+static constexpr const char *FIRMWARE_VARIANT = RI_FIRMWARE_VARIANT;
+static constexpr const char *WEIGHTS_SHA256 = RI_WEIGHTS_SHA256;
 static const char VOCAB[VOCAB_SIZE + 1] = "abcdefghijklmnopqrstuvwxyz .,!?\'\n";
 static const char *BENCH_SEEDS[SEED_COUNT] = {
+#if RI_TINYSTORIES_MODE
+  "once upon a ",
+  "the little girl ",
+  "the dragon was "
+#else
   "hot room. action is ",
   "missing sensor. action is ",
   "the receipt says "
+#endif
 };
 
 int vocab_idx(char c);
@@ -101,6 +134,16 @@ char idx_vocab(int idx);
 static constexpr int UTILITY_SEED_COUNT = 8;
 static constexpr int UTILITY_MAX_CHARS = 48;
 static const char *UTILITY_SEEDS[UTILITY_SEED_COUNT] = {
+#if RI_TINYSTORIES_MODE
+  "once upon a ",
+  "the little girl ",
+  "the boy saw ",
+  "the dog was ",
+  "the cat said ",
+  "the dragon was ",
+  "the toy was ",
+  "the bird flew "
+#else
   "hot room. action is ",
   "missing sensor. action is ",
   "stale data. action is ",
@@ -109,6 +152,7 @@ static const char *UTILITY_SEEDS[UTILITY_SEED_COUNT] = {
   "normal room. action is ",
   "safe action is ",
   "local first means "
+#endif
 };
 
 #if CLUSTER_WIFI_DEMO
@@ -1228,7 +1272,11 @@ bool convert_wih_to_int4() {
   }
   Serial.printf("int4 recurrent converted=%lu saved=%lu free_psram=%lu\n",
     (unsigned long)converted, (unsigned long)saved, (unsigned long)ESP.getFreePsram());
-  return converted == (LAYERS * 2);
+  // all-int8 H256 packs convert both input and recurrent matrices (LAYERS*2).
+  // mixed_lstm_safe TinyStories H512 already stores input matrices as int4 and only
+  // needs recurrent matrices converted at boot (LAYERS). Anything below LAYERS means
+  // a layer is missing a packed/convertible recurrent path.
+  return converted >= LAYERS;
 }
 
 bool resolve_model() {
@@ -1653,9 +1701,9 @@ void run_benchmark() {
   Serial.printf("\"free_heap_start\":%lu,", (unsigned long)ESP.getFreeHeap());
   Serial.printf("\"free_psram_start\":%lu,", (unsigned long)ESP.getFreePsram());
   Serial.printf("\"weights_sha256\":\"%s\",", WEIGHTS_SHA256);
-  Serial.print("\"model_profile\":\"domain_h256_all_int8\",");
-  Serial.print("\"params\":1595937,");
-  Serial.print("\"compressed_bytes\":1614972,");
+  Serial.printf("\"model_profile\":\"%s\",", RI_MODEL_PROFILE);
+  Serial.printf("\"params\":%lu,", (unsigned long)RI_MODEL_PARAMS);
+  Serial.printf("\"compressed_bytes\":%lu,", (unsigned long)RI_COMPRESSED_BYTES);
   Serial.printf("\"tokens_per_seed\":%d,", TOKENS_PER_SEED);
   Serial.printf("\"total_measured_tokens\":%d,", measured);
   Serial.printf("\"ms_total\":%lu,", (unsigned long)total_ms);
@@ -1705,7 +1753,7 @@ void run_language_prompt_receipt(const char *prompt) {
   Serial.print("\"schema\":\"ri_esp32s3_local_language_v1\",");
   Serial.printf("\"firmware_variant\":\"%s\",", FIRMWARE_VARIANT);
   Serial.printf("\"weights_sha256\":\"%s\",", WEIGHTS_SHA256);
-  Serial.print("\"model_profile\":\"curated_status_h320_all_int8\",");
+  Serial.printf("\"model_profile\":\"%s\",", RI_MODEL_PROFILE);
   Serial.print("\"prompt\":\""); json_escape_print(prompt); Serial.print("\",");
   Serial.print("\"output\":\""); json_escape_print(output); Serial.print("\",");
   Serial.printf("\"generated_chars\":%d,", chars);
@@ -1751,7 +1799,7 @@ void setup() {
 
   Serial.begin(115200);
   delay(1500);
-  Serial.println("\nESP32-S3 LSTM boot p22 i4 recurrent SIMD+dualcore");
+  Serial.printf("\nESP32-S3 LSTM boot %s\n", FIRMWARE_VARIANT);
   Serial.printf("free_heap=%lu free_psram=%lu psram_size=%lu\n",
     (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(), (unsigned long)ESP.getPsramSize());
 
@@ -1775,7 +1823,9 @@ void setup() {
   alloc_state();
   Serial.printf("state allocated free_heap=%lu free_psram=%lu\n",
     (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram());
-  Serial.println("MODEL_READY profile=domain_h256_all_int8 params=1595937");
+  Serial.printf("MODEL_READY profile=%s params=%lu hidden=%u layers=%u\n",
+                RI_MODEL_PROFILE, (unsigned long)RI_MODEL_PARAMS,
+                (unsigned)HIDDEN, (unsigned)LAYERS);
   run_benchmark();
   Serial.println("PROOF_DONE");
 }

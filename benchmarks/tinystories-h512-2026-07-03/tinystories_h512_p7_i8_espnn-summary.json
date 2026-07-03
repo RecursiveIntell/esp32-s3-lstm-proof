@@ -1,0 +1,65 @@
+{
+  "aggregate": {
+    "ms_per_token_max": 86.04,
+    "ms_per_token_mean": 86.04,
+    "ms_per_token_min": 86.04,
+    "runs": 1,
+    "tokens_per_sec_max": 11.6223,
+    "tokens_per_sec_mean": 11.6223,
+    "tokens_per_sec_min": 11.6223
+  },
+  "receipts": [
+    {
+      "blockers": [],
+      "board": "esp32s3",
+      "compressed_bytes": 4785276,
+      "firmware_variant": "tinystories_h512_p7_i8_espnn",
+      "free_heap_start": 270900,
+      "free_psram_start": 2077507,
+      "heap_after": 270900,
+      "host_observed_at": "2026-07-03T03:32:56-0500",
+      "model_profile": "tinystories_h512_mixed_lstm_safe",
+      "ms_per_token_mean": 86.04,
+      "ms_per_token_p50": 86,
+      "ms_per_token_p95": 86,
+      "ms_total": 7387,
+      "op_breakdown_ms_per_token": {
+        "activation": 1.302,
+        "core1_wait": 83.781,
+        "embed": 0.046,
+        "fc": 0.446,
+        "lstm_whh": 38.75,
+        "lstm_wih": 38.807,
+        "quant": 0.406,
+        "sram_copy": 0.0
+      },
+      "output_by_seed": {
+        "once upon a ": "time there was a",
+        "the dragon was ": "so happy.\nendoft",
+        "the little girl ": "was so happy. sh"
+      },
+      "params": 6337569,
+      "passed": true,
+      "psram_after": 2077507,
+      "psram_size": 8386103,
+      "run_index": 1,
+      "schema": "ri-esp32s3-lstm-bench-v1",
+      "state_alloc": "internal+sram_scratch",
+      "stopped_output_by_seed": {
+        "once upon a ": "time there was a tiny model that lived on a sens",
+        "the bird flew ": "away.",
+        "the boy saw ": "a big smile.",
+        "the cat said ": "yes.",
+        "the dog was ": "so happy.",
+        "the dragon was ": "so happy.",
+        "the little girl ": "was so happy.",
+        "the toy was ": "so happy."
+      },
+      "tokens_per_sec": 11.6223,
+      "tokens_per_seed": 16,
+      "total_measured_tokens": 48,
+      "weights_sha256": "709ff8a921612f0d1a075ce586d3355c895b16a100d12d8f74bb3367cdf83c61"
+    }
+  ],
+  "variant": "tinystories_h512_p7_i8_espnn"
+}

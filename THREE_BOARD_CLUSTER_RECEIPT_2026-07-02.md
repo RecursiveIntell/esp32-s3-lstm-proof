@@ -9,7 +9,7 @@ This deployment plan is intentionally targeted at users with minimal local infra
 
 ## Claim Boundary
 
-- Do not claim TinyStories model behavior (or performance) until a validated TinyStories hardware run is recorded.
+- Do claim TinyStories-class H512 story behavior only for the validated single-board hardware run recorded in `TINYSTORIES_H512_HARDWARE_REPORT_2026-07-03.md`; do not claim TinyStories-33M.
 - Do not claim the 3-board cluster hardware path is production-ready until phase-level evidence confirms transport, sharding, and generation behavior across all boards.
 - Do not claim internet or cloud access is required for local inference.
 - Do claim that coordinator AP/gateway mode operates without upstream internet after provisioning.
@@ -378,9 +378,14 @@ This deployment plan is intentionally targeted at users with minimal local infra
 
 ## Phase 5: TinyStories reduced model
 
-- [x] Closed / not claimed.
-  - Evidence basis: domain retraining explicitly replaced TinyStories drift with receipt/action/status behavior.
-  - Boundary: no TinyStories model behavior or performance is claimed.
+- [x] Completed as a single-board H512 TinyStories-class char-LSTM hardware run.
+  - Firmware env: `esp32s3_tinystories_h512`.
+  - Weight pack: `weights_h512_p7_backup_709ff8.bin`, 4,785,276 bytes, SHA256 `709ff8a921612f0d1a075ce586d3355c895b16a100d12d8f74bb3367cdf83c61`.
+  - Hardware receipt: `MODEL_READY profile=tinystories_h512_mixed_lstm_safe params=6337569 hidden=512 layers=3`.
+  - Benchmark: `tokens_per_sec=11.6223`, `ms_per_token_mean=86.04`, `total_measured_tokens=48`.
+  - Verified story outputs: `once upon a ` -> `time there was a tiny model that lived on a sens`; `the little girl ` -> `was so happy.`; `the boy saw ` -> `a big smile.`; `the cat said ` -> `yes.`; `the bird flew ` -> `away.`
+  - Full report: `TINYSTORIES_H512_HARDWARE_REPORT_2026-07-03.md`.
+  - Boundary: this is TinyStories-class compact H512 story behavior, not TinyStories-33M and not a general assistant quality benchmark.
 
 ## Phase 6: TinyStories-33M attempt
 
@@ -397,6 +402,6 @@ This deployment plan is intentionally targeted at users with minimal local infra
 
 ## Final conclusion
 
-- Completed: hardware-verified single-board H256 local-language proof; hardware-verified three-board coordinator-AP cluster; hardware-verified int8/int4 sharded matmul; hardware-verified sharded FC output-head inference; coordinator-managed worker firmware update relay; local sentinel policy demo.
-- Not claimed: production readiness, full distributed H256 recurrent state/gate computation, TinyStories behavior/performance, transformer result, or direct laptop OTA while staying on the normal internet-connected network.
+- Completed: hardware-verified single-board H256 local-language proof; hardware-verified single-board H512 TinyStories-class story run; hardware-verified three-board coordinator-AP cluster; hardware-verified int8/int4 sharded matmul; hardware-verified sharded FC output-head inference; coordinator-managed worker firmware update relay; local sentinel policy demo.
+- Not claimed: production readiness, full distributed H256/H512 recurrent state/gate computation, TinyStories-33M, transformer result, or direct laptop OTA while staying on the normal internet-connected network.
 - Operator state after completion: keep coordinator on USB; future worker app firmware updates can be pushed through `tools/relay_worker_update.py` without worker USB cycles.

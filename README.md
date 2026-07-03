@@ -15,11 +15,50 @@ A char-level LSTM running at **39.52 characters/second** (**~9.9 BPE-equivalent 
 | p14 curated | H320 all-int8 | 2.49M | 17.22 | 4.30 | 58 | 28.2x | yes |
 | p16 SRAM+dual-core | H256 all-int8 | 1.60M | 32.59 | ~8.15 | 31 | 53.3x | yes |
 | **p22 int4+SIMD** | **H256 all-int8** | **1.60M** | **39.52** | **~9.88** | **25.30** | **64.7x** | **yes** |
+| **TinyStories H512** | **H512 mixed story model** | **6.34M** | **11.62** | **~2.91** | **86.04** | **19.0x** | **yes** |
 
 BPE tok/s uses the standard 4.0 chars/token ratio for English. Domain-specific status text (e.g. "check airflow.") averages ~4.5 chars/token, giving ~7.2 BPE tok/s.
 
 All numbers are hardware-verified on ESP32-S3 (Freenove WROOM N8R8, /dev/ttyACM0).
 Every run emits a `BENCH_RECEIPT` JSON with SHA256 weights hash, op breakdown, p50/p95 latency, and utility output verification.
+
+## TinyStories-class H512 hardware run
+
+TinyStories is now running on the ESP32-S3 runtime as a 6.34M-param H512 char-LSTM story model. This is not TinyStories-33M; it is the compact TinyStories-class model that fits the ESP32-S3 5MB weight partition.
+
+Hardware receipt:
+
+```text
+ESP32-S3 LSTM boot tinystories_h512_p7_i8_espnn
+MODEL_READY profile=tinystories_h512_mixed_lstm_safe params=6337569 hidden=512 layers=3
+BENCH_RECEIPT ... "tokens_per_sec":11.6223,"ms_per_token_mean":86.04,...
+```
+
+Verified story outputs:
+
+```text
+once upon a        -> time there was a tiny model that lived on a sens
+the little girl    -> was so happy.
+the boy saw        -> a big smile.
+the cat said       -> yes.
+the bird flew      -> away.
+```
+
+Reproduce:
+
+```bash
+pio run -e esp32s3_tinystories_h512
+pio run -e esp32s3_tinystories_h512 -t upload --upload-port /dev/ttyACM0
+python3 ~/.platformio/packages/tool-esptoolpy/esptool.py \
+  --chip esp32s3 --port /dev/ttyACM0 --baud 921600 \
+  write_flash 0x210000 weights_h512_p7_backup_709ff8.bin
+python3 tools/run_bench.py --port /dev/ttyACM0 \
+  --variant tinystories_h512_p7_i8_espnn \
+  --repeat 1 --timeout 120 \
+  --out-dir benchmarks/tinystories-h512-2026-07-03
+```
+
+Full report: `TINYSTORIES_H512_HARDWARE_REPORT_2026-07-03.md`.
 
 ## Comparison to prior work
 
@@ -228,12 +267,14 @@ Boundary: this is a hardware-verified sharded matmul / sharded output-head / fle
 ## Claim boundary
 
 **What this is:**
-- A domain-specific char-level LSTM generating short status/action phrases (16-48 chars)
+- A domain-specific H256 char-level LSTM generating short status/action phrases (16-48 chars)
+- A compact H512 TinyStories-class char-LSTM generating short story continuations on ESP32-S3
 - A systems optimization proof: 53.3x speedup through ESP-NN SIMD, SRAM tiling, and dual-core
 - A receipt-backed methodology: every benchmark has SHA256, op breakdown, p50/p95, output verification
 
 **What this is NOT:**
 - A general-purpose language model (it generates domain-specific phrases, not arbitrary text)
+- TinyStories-33M (the verified story model is a compact 6.34M-param char-LSTM)
 - A transformer (LSTM was chosen because O(1) inference memory and no attention overhead)
 - Production-ready (it is a hardware proof, not a product)
 
