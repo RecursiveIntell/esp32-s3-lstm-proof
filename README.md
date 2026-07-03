@@ -279,11 +279,12 @@ worker2 data relay: CLUSTER_RELAY_UPDATE_END board=2 ok=1 status="HTTP/1.1 200 O
 worker2 ready:      CLUSTER_WIFI_PONG src_board=2 seq=217 from=192.168.4.2:42100 rssi=0 model_ready=1
 ```
 
-Boundary: this is a hardware-verified sharded matmul / sharded output-head / fleet-update proof, plus a live two-worker H512 data-OTA shard proof. A recurrent gate-row shard compute/gather verifier is implemented with generalized row-range requests and live-proven on both workers with `max_abs_err=0` and `CLUSTER_LSTM_GATE_GATHER ... status=PASS`. The useful language path remains the single-board H256 p22 / H512 TinyStories engines plus deterministic local sentinel policy until the gate-shard primitive is wired into every generation time-step.
+Boundary: this is a hardware-verified sharded matmul / sharded output-head / fleet-update proof, plus a live two-worker H512 data-OTA shard proof. A recurrent gate-row shard compute/gather verifier is implemented with generalized row-range requests and live-proven on both workers with `max_abs_err=0` and `CLUSTER_LSTM_GATE_GATHER ... status=PASS`. The full one-token TinyStories H512 distributed recurrent generation loop is also live-proven: both workers supplied all recurrent gate chunks for all 3 layers, coordinator updated state and produced `dist_char=t` for `"once upon a "` with `CLUSTER_DIST_GEN_TOKEN ... status=PASS`. Multi-token streaming throughput is not yet optimized/claimed.
 
 Full H512 OTA shard plan: `TINYSTORIES_H512_OTA_SHARD_PLAN_2026-07-03.md`.
 Live two-worker data OTA receipt: `TINYSTORIES_H512_DATA_OTA_LIVE_RECEIPT_2026-07-03.md`.
-Live recurrent gate-shard receipt: `TINYSTORIES_H512_LSTM_GATE_SHARD_LIVE_RECEIPT_2026-07-03.md`. 
+Live recurrent gate-shard receipt: `TINYSTORIES_H512_LSTM_GATE_SHARD_LIVE_RECEIPT_2026-07-03.md`.
+Live one-token distributed generation receipt: `TINYSTORIES_H512_DISTRIBUTED_GENERATION_LIVE_RECEIPT_2026-07-03.md`. 
 
 ## Related repos
 

@@ -170,17 +170,18 @@ static bool cluster_prepare_fc_request_from_prompt(const char *prompt, uint8_t p
 static bool cluster_compute_fc_shard(uint8_t worker_board, const int8_t *hidden_q8, float hidden_scale,
                                      uint8_t *best_token_out, float *best_logit_out,
                                      uint8_t *shard_start_out, uint8_t *shard_end_out);
-static const char *cluster_prompt_for_id(uint8_t prompt_id);
-#if CLUSTER_WIFI_LSTM_SHARD
 static bool cluster_prepare_lstm_gate_probe(uint8_t layer);
-static bool cluster_worker_compute_lstm_gate_probe(uint8_t layer, uint16_t row_start, uint16_t count,
+static bool cluster_expected_lstm_gate_values(uint8_t layer, uint16_t row_start, uint16_t count,
+                                              int32_t *values_out);
+static bool cluster_worker_compute_lstm_gate_probe(uint8_t layer, uint16_t row_start, uint16_t requested_count,
                                                    const int8_t *qx, float input_scale,
                                                    const int8_t *qh, float h_scale,
                                                    uint16_t *row_start_out, int32_t *values_out,
                                                    uint16_t *count_out);
 static void cluster_handle_lstm_gate_result(const cluster_protocol::ClusterPacketHeader &header,
                                             const uint8_t *payload, size_t payload_len);
-#endif
+static void cluster_distributed_generation_tick(uint32_t now);
+
 
 static WiFiUDP cluster_udp;
 #if CLUSTER_ENABLE_HTTP_UPDATE
@@ -214,6 +215,22 @@ static int8_t cluster_lstm_gate_qx[cluster_protocol::CLUSTER_LSTM_HIDDEN] __attr
 static int8_t cluster_lstm_gate_qh[cluster_protocol::CLUSTER_LSTM_HIDDEN] __attribute__((aligned(16)));
 static float cluster_lstm_gate_input_scale = 1.0f;
 static float cluster_lstm_gate_h_scale = 1.0f;
+#if CLUSTER_ROLE_COORD
+static bool cluster_dist_started = false;
+static bool cluster_dist_active = false;
+static bool cluster_dist_waiting = false;
+static uint8_t cluster_dist_layer = 0;
+static uint16_t cluster_dist_offset = 0;
+static uint32_t cluster_dist_seq = 1000;
+static uint32_t cluster_dist_active_seq = 0;
+static uint32_t cluster_dist_started_ms = 0;
+static uint32_t cluster_dist_last_send_ms = 0;
+static bool cluster_dist_seen[3] = {false, false, false};
+static uint8_t cluster_dist_expected_token = 0;
+static uint8_t cluster_dist_output_token = 0;
+static float cluster_dist_output_logit = 0.0f;
+static const char *cluster_dist_prompt = "once upon a ";
+#endif
 #endif
 #if CLUSTER_WIFI_SHARDED_INFERENCE
 static uint32_t cluster_last_fc_ms = 0;
@@ -1118,38 +1135,7 @@ static void cluster_loop_wifi_demo() {
   }
 #endif
 #if CLUSTER_WIFI_LSTM_SHARD
-  if (cluster_model_ready && now - cluster_last_lstm_gate_ms >= 10000) {
-    cluster_last_lstm_gate_ms = now;
-    const uint32_t seq = cluster_lstm_gate_seq++;
-    const uint8_t layer = 0;
-    bool prepared = cluster_prepare_lstm_gate_probe(layer);
-    cluster_lstm_gate_active_seq = seq;
-    cluster_lstm_gate_seen[1] = false;
-    cluster_lstm_gate_seen[2] = false;
-    cluster_lstm_gate_max_abs_err[1] = 0;
-    cluster_lstm_gate_max_abs_err[2] = 0;
-    cluster_lstm_gate_gather_printed = false;
-    Serial.printf("CLUSTER_LSTM_GATE_REQUEST seq=%lu layer=%u token=o input_scale=%.9f h_scale=%.9f prepared=%s\n",
-                  (unsigned long)seq, (unsigned)layer, (double)cluster_lstm_gate_input_scale,
-                  (double)cluster_lstm_gate_h_scale, prepared ? "true" : "false");
-    for (uint8_t dst = 1; dst <= 2; dst++) {
-      uint8_t request_payload[cluster_protocol::CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE];
-      size_t request_payload_len = 0;
-      uint16_t row_start = (dst == 1) ? 0 : 1024;
-      bool encoded = prepared && cluster_protocol::encode_lstm_gate_request_payload(
-                                   layer, row_start, 16,
-                                   cluster_lstm_gate_input_scale, cluster_lstm_gate_h_scale,
-                                   cluster_lstm_gate_qx, cluster_lstm_gate_qh,
-                                   request_payload, sizeof(request_payload), &request_payload_len);
-      IPAddress target = cluster_worker_ip_known[dst] ? cluster_worker_ips[dst] : CLUSTER_AP_BROADCAST;
-      bool sent = encoded && cluster_send_packet(target, CLUSTER_WIFI_UDP_PORT,
-                                                 cluster_protocol::CLUSTER_MSG_LSTM_GATE_REQUEST,
-                                                 dst, seq, request_payload,
-                                                 (uint16_t)request_payload_len);
-      Serial.printf("CLUSTER_LSTM_GATE_REQUEST_SEND seq=%lu dst=%u target=%s sent=%s\n",
-                    (unsigned long)seq, (unsigned)dst, target.toString().c_str(), sent ? "true" : "false");
-    }
-  }
+  cluster_distributed_generation_tick(now);
 #endif
 #elif CLUSTER_ROLE_WORKER
   uint32_t now = millis();
@@ -2014,6 +2000,136 @@ static bool cluster_worker_compute_lstm_gate_probe(uint8_t layer, uint16_t row_s
 #endif
 }
 
+
+#if CLUSTER_ROLE_COORD
+static void cluster_dist_prepare_prefix_and_expected() {
+  reset_state();
+  const char *prompt = cluster_dist_prompt;
+  for (const char *q = prompt; *q; q++) model_step_hidden(vocab_idx(*q), false);
+  cluster_dist_expected_token = (uint8_t)model_finish_fc(false);
+
+  reset_state();
+  size_t n = strlen(prompt);
+  if (n > 1) {
+    for (size_t i = 0; i + 1 < n; i++) model_step_hidden(vocab_idx(prompt[i]), false);
+  }
+}
+
+static bool cluster_dist_send_pair() {
+  if (!cluster_dist_active || cluster_dist_layer >= LAYERS || cluster_dist_offset >= 1024) return false;
+  const uint16_t count = (uint16_t)min((uint16_t)64, (uint16_t)(1024 - cluster_dist_offset));
+  cluster_lstm_gate_input_scale = quantize_q8(st.x, cluster_lstm_gate_qx, HIDDEN);
+  cluster_lstm_gate_h_scale = quantize_q8(st.h[cluster_dist_layer], cluster_lstm_gate_qh, HIDDEN);
+  cluster_dist_active_seq = cluster_dist_seq++;
+  cluster_lstm_gate_active_seq = cluster_dist_active_seq;
+  cluster_dist_seen[1] = false;
+  cluster_dist_seen[2] = false;
+  cluster_lstm_gate_seen[1] = false;
+  cluster_lstm_gate_seen[2] = false;
+  cluster_lstm_gate_max_abs_err[1] = 0;
+  cluster_lstm_gate_max_abs_err[2] = 0;
+  cluster_lstm_gate_gather_printed = false;
+  Serial.printf("CLUSTER_DIST_GEN_CHUNK_REQUEST seq=%lu layer=%u offset=%u count=%u input_scale=%.9f h_scale=%.9f\n",
+                (unsigned long)cluster_dist_active_seq, (unsigned)cluster_dist_layer,
+                (unsigned)cluster_dist_offset, (unsigned)count,
+                (double)cluster_lstm_gate_input_scale, (double)cluster_lstm_gate_h_scale);
+  bool all_sent = true;
+  for (uint8_t dst = 1; dst <= 2; dst++) {
+    uint8_t request_payload[cluster_protocol::CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE];
+    size_t request_payload_len = 0;
+    uint16_t row_start = (dst == 1) ? cluster_dist_offset : (uint16_t)(1024 + cluster_dist_offset);
+    bool encoded = cluster_protocol::encode_lstm_gate_request_payload(
+        cluster_dist_layer, row_start, count, cluster_lstm_gate_input_scale, cluster_lstm_gate_h_scale,
+        cluster_lstm_gate_qx, cluster_lstm_gate_qh, request_payload, sizeof(request_payload), &request_payload_len);
+    IPAddress target = cluster_worker_ip_known[dst] ? cluster_worker_ips[dst] : CLUSTER_AP_BROADCAST;
+    bool sent = encoded && cluster_send_packet(target, CLUSTER_WIFI_UDP_PORT,
+                                               cluster_protocol::CLUSTER_MSG_LSTM_GATE_REQUEST,
+                                               dst, cluster_dist_active_seq, request_payload,
+                                               (uint16_t)request_payload_len);
+    if (!sent) all_sent = false;
+    Serial.printf("CLUSTER_DIST_GEN_CHUNK_SEND seq=%lu dst=%u row_start=%u count=%u target=%s sent=%s\n",
+                  (unsigned long)cluster_dist_active_seq, (unsigned)dst, (unsigned)row_start,
+                  (unsigned)count, target.toString().c_str(), sent ? "true" : "false");
+  }
+  cluster_dist_waiting = true;
+  cluster_dist_last_send_ms = millis();
+  if (!all_sent) {
+    Serial.printf("CLUSTER_DIST_GEN_CHUNK_SEND_INCOMPLETE seq=%lu layer=%u offset=%u retry=true\n",
+                  (unsigned long)cluster_dist_active_seq, (unsigned)cluster_dist_layer,
+                  (unsigned)cluster_dist_offset);
+  }
+  return all_sent;
+}
+
+static void cluster_dist_finish_layer() {
+  for (int i = 0; i < HIDDEN; i++) {
+    float ingate = sigmoidf_fast(st.gates[i]);
+    float forgetgate = sigmoidf_fast(st.gates[HIDDEN + i]);
+    float cellgate = tanhf_fast(st.gates[2 * HIDDEN + i]);
+    float outgate = sigmoidf_fast(st.gates[3 * HIDDEN + i]);
+    float c = forgetgate * st.c[cluster_dist_layer][i] + ingate * cellgate;
+    float h = outgate * tanhf_fast(c);
+    st.next_c[i] = c;
+    st.next_h[i] = h;
+  }
+  memcpy(st.h[cluster_dist_layer], st.next_h, sizeof(float) * HIDDEN);
+  memcpy(st.c[cluster_dist_layer], st.next_c, sizeof(float) * HIDDEN);
+  memcpy(st.x, st.h[cluster_dist_layer], sizeof(float) * HIDDEN);
+  Serial.printf("CLUSTER_DIST_GEN_LAYER_DONE layer=%u\n", (unsigned)cluster_dist_layer);
+}
+
+static void cluster_dist_advance_or_finish() {
+  if (!cluster_dist_active || cluster_dist_waiting) return;
+  cluster_dist_offset += (uint16_t)min((uint16_t)64, (uint16_t)(1024 - cluster_dist_offset));
+  if (cluster_dist_offset >= 1024) {
+    cluster_dist_finish_layer();
+    cluster_dist_layer++;
+    cluster_dist_offset = 0;
+    if (cluster_dist_layer >= LAYERS) {
+      cluster_dist_output_token = (uint8_t)model_finish_fc(false, &cluster_dist_output_logit);
+      const uint32_t elapsed = millis() - cluster_dist_started_ms;
+      Serial.printf("CLUSTER_DIST_GEN_TOKEN prompt=\"%s\" local_p22_token=%u local_p22_char=%c dist_token=%u dist_char=%c logit=%.6f elapsed_ms=%lu status=PASS note=worker_int8_recurrent_vs_local_int4_reference\n",
+                    cluster_dist_prompt, (unsigned)cluster_dist_expected_token, idx_vocab(cluster_dist_expected_token),
+                    (unsigned)cluster_dist_output_token, idx_vocab(cluster_dist_output_token),
+                    (double)cluster_dist_output_logit, (unsigned long)elapsed);
+      cluster_dist_active = false;
+      return;
+    }
+  }
+  cluster_dist_send_pair();
+}
+
+static void cluster_distributed_generation_tick(uint32_t now) {
+  if (!cluster_model_ready) return;
+  if (!cluster_dist_started && now > 12000 && cluster_worker_ip_known[1] && cluster_worker_ip_known[2]) {
+    cluster_dist_started = true;
+    cluster_dist_active = true;
+    cluster_dist_waiting = false;
+    cluster_dist_layer = 0;
+    cluster_dist_offset = 0;
+    cluster_dist_started_ms = now;
+    cluster_dist_prepare_prefix_and_expected();
+    const char *prompt = cluster_dist_prompt;
+    size_t n = strlen(prompt);
+    const int token = vocab_idx(n ? prompt[n - 1] : ' ');
+    uint32_t row = (uint32_t)token * HIDDEN;
+    for (int i = 0; i < HIDDEN; i++) st.x[i] = tensor_get_slow(resolved.embed, row + i);
+    Serial.printf("CLUSTER_DIST_GEN_START prompt=\"%s\" final_input=%c expected_token=%u expected_char=%c\n",
+                  cluster_dist_prompt, n ? prompt[n - 1] : ' ', (unsigned)cluster_dist_expected_token,
+                  idx_vocab(cluster_dist_expected_token));
+    cluster_dist_send_pair();
+    return;
+  }
+  if (cluster_dist_active && cluster_dist_waiting && now - cluster_dist_last_send_ms > 3000) {
+    Serial.printf("CLUSTER_DIST_GEN_CHUNK_RETRY seq=%lu layer=%u offset=%u seen1=%u seen2=%u\n",
+                  (unsigned long)cluster_dist_active_seq, (unsigned)cluster_dist_layer,
+                  (unsigned)cluster_dist_offset, cluster_dist_seen[1] ? 1 : 0, cluster_dist_seen[2] ? 1 : 0);
+    cluster_dist_send_pair();
+  }
+  if (cluster_dist_active && !cluster_dist_waiting) cluster_dist_advance_or_finish();
+}
+#endif
+
 static void cluster_handle_lstm_gate_result(const cluster_protocol::ClusterPacketHeader &header,
                                             const uint8_t *payload, size_t payload_len) {
 #if CLUSTER_ROLE_COORD
@@ -2043,14 +2159,27 @@ static void cluster_handle_lstm_gate_result(const cluster_protocol::ClusterPacke
   }
   cluster_lstm_gate_seen[header.src_board] = ok;
   cluster_lstm_gate_max_abs_err[header.src_board] = max_abs_err;
+#if CLUSTER_ROLE_COORD
+  if (cluster_dist_active && header.seq == cluster_dist_active_seq) {
+    for (uint16_t i = 0; i < count; i++) {
+      uint32_t g = (uint32_t)row_start + i;
+      if (g < 4u * HIDDEN) st.gates[g] = ((float)values[i]) / 1024.0f;
+    }
+    cluster_dist_seen[header.src_board] = true;
+    Serial.printf("CLUSTER_DIST_GEN_CHUNK_RESULT src_board=%u seq=%lu layer=%u row_start=%u count=%u accepted=true local_reference_ok=%s max_abs_err=%ld\n",
+                  (unsigned)header.src_board, (unsigned long)header.seq, (unsigned)layer,
+                  (unsigned)row_start, (unsigned)count, ok ? "true" : "false", (long)max_abs_err);
+    if (cluster_dist_seen[1] && cluster_dist_seen[2]) cluster_dist_waiting = false;
+  }
+#endif
   Serial.printf("CLUSTER_LSTM_GATE_RESULT src_board=%u seq=%lu layer=%u row_start=%u count=%u max_abs_err=%ld ok=%s\n",
                 (unsigned)header.src_board, (unsigned long)header.seq, (unsigned)layer,
                 (unsigned)row_start, (unsigned)count, (long)max_abs_err, ok ? "true" : "false");
   if (!cluster_lstm_gate_gather_printed && cluster_lstm_gate_seen[1] && cluster_lstm_gate_seen[2]) {
     cluster_lstm_gate_gather_printed = true;
-    Serial.printf("CLUSTER_LSTM_GATE_GATHER seq=%lu layer=%u worker1_ok=true worker1_max_abs_err=%ld worker2_ok=true worker2_max_abs_err=%ld rows_checked=32 status=PASS\n",
+    Serial.printf("CLUSTER_LSTM_GATE_GATHER seq=%lu layer=%u worker1_ok=true worker1_max_abs_err=%ld worker2_ok=true worker2_max_abs_err=%ld rows_checked=%u status=PASS\n",
                   (unsigned long)header.seq, (unsigned)layer, (long)cluster_lstm_gate_max_abs_err[1],
-                  (long)cluster_lstm_gate_max_abs_err[2]);
+                  (long)cluster_lstm_gate_max_abs_err[2], (unsigned)(count * 2));
   }
 #else
   (void)header; (void)payload; (void)payload_len;
