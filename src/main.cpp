@@ -33,6 +33,8 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
+#include <WebServer.h>
+#include <Update.h>
 
 #if __has_include("wifi_secrets.local.h")
 #include "wifi_secrets.local.h"
@@ -55,6 +57,12 @@
 #endif
 #ifndef CLUSTER_OTA_PASSWORD
 #define CLUSTER_OTA_PASSWORD "localfirstai"
+#endif
+#ifndef CLUSTER_ENABLE_HTTP_UPDATE
+#define CLUSTER_ENABLE_HTTP_UPDATE 0
+#endif
+#ifndef CLUSTER_HTTP_UPDATE_PORT
+#define CLUSTER_HTTP_UPDATE_PORT 8080
 #endif
 #endif
 
@@ -95,6 +103,10 @@ static const char *UTILITY_SEEDS[UTILITY_SEED_COUNT] = {
 
 #if CLUSTER_WIFI_DEMO
 static WiFiUDP cluster_udp;
+#if CLUSTER_ENABLE_HTTP_UPDATE
+static WebServer cluster_http_update_server(CLUSTER_HTTP_UPDATE_PORT);
+static bool cluster_http_update_error = false;
+#endif
 static uint32_t cluster_ping_seq = 1;
 static uint32_t cluster_matmul_seq = 1;
 static uint32_t cluster_last_ping_ms = 0;
@@ -164,6 +176,84 @@ static void cluster_setup_ota() {
                 (unsigned)CLUSTER_BOARD_ID, cluster_ota_hostname());
   cluster_print_ip("ip", cluster_local_ip());
   Serial.println(" port=3232");
+}
+#endif
+
+#if CLUSTER_ENABLE_HTTP_UPDATE
+static void cluster_setup_http_update() {
+  cluster_http_update_server.on("/health", HTTP_GET, []() {
+    char body[160];
+    snprintf(body, sizeof(body),
+             "ok=1 board_id=%u role=%s mode=%s ip=%s\n",
+             (unsigned)CLUSTER_BOARD_ID,
+#if CLUSTER_ROLE_COORD
+             "coord",
+#elif CLUSTER_ROLE_WORKER
+             "worker",
+#else
+             "unknown",
+#endif
+#if CLUSTER_WIFI_MATMUL_PROOF
+             "matmul",
+#else
+             "ping",
+#endif
+             cluster_local_ip().toString().c_str());
+    cluster_http_update_server.send(200, "text/plain", body);
+  });
+
+  cluster_http_update_server.on(
+      "/update", HTTP_POST,
+      []() {
+        const bool ok = !cluster_http_update_error && !Update.hasError();
+        cluster_http_update_server.sendHeader("Connection", "close");
+        cluster_http_update_server.send(ok ? 200 : 500, "text/plain", ok ? "OK\n" : "FAIL\n");
+        Serial.printf("CLUSTER_HTTP_UPDATE_END ok=%u\n", ok ? 1 : 0);
+        if (ok) {
+          delay(300);
+          ESP.restart();
+        }
+      },
+      []() {
+        HTTPUpload &upload = cluster_http_update_server.upload();
+        if (upload.status == UPLOAD_FILE_START) {
+          cluster_http_update_error = false;
+          Serial.printf("CLUSTER_HTTP_UPDATE_START filename=%s\n", upload.filename.c_str());
+          if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+            cluster_http_update_error = true;
+            Serial.printf("CLUSTER_HTTP_UPDATE_ERROR phase=begin code=%u\n", (unsigned)Update.getError());
+          }
+        } else if (upload.status == UPLOAD_FILE_WRITE) {
+          if (!cluster_http_update_error) {
+            size_t written = Update.write(upload.buf, upload.currentSize);
+            if (written != upload.currentSize) {
+              cluster_http_update_error = true;
+              Serial.printf("CLUSTER_HTTP_UPDATE_ERROR phase=write wrote=%u expected=%u code=%u\n",
+                            (unsigned)written, (unsigned)upload.currentSize, (unsigned)Update.getError());
+            }
+          }
+        } else if (upload.status == UPLOAD_FILE_END) {
+          if (!cluster_http_update_error) {
+            if (!Update.end(true)) {
+              cluster_http_update_error = true;
+              Serial.printf("CLUSTER_HTTP_UPDATE_ERROR phase=end code=%u\n", (unsigned)Update.getError());
+            } else {
+              Serial.printf("CLUSTER_HTTP_UPDATE_STAGED bytes=%u\n", (unsigned)upload.totalSize);
+            }
+          } else {
+            Update.abort();
+          }
+        } else if (upload.status == UPLOAD_FILE_ABORTED) {
+          cluster_http_update_error = true;
+          Update.abort();
+          Serial.println("CLUSTER_HTTP_UPDATE_ERROR phase=aborted");
+        }
+      });
+
+  cluster_http_update_server.begin();
+  Serial.printf("CLUSTER_HTTP_UPDATE_READY board_id=%u ", (unsigned)CLUSTER_BOARD_ID);
+  cluster_print_ip("ip", cluster_local_ip());
+  Serial.printf(" port=%u endpoint=/update\n", (unsigned)CLUSTER_HTTP_UPDATE_PORT);
 }
 #endif
 
@@ -354,6 +444,7 @@ static void cluster_setup_wifi_demo() {
 #if CLUSTER_WIFI_AP_MODE
   WiFi.mode(WIFI_AP);
   WiFi.setSleep(false);
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
   WiFi.softAPConfig(CLUSTER_AP_IP, CLUSTER_AP_GATEWAY, CLUSTER_AP_NETMASK);
   bool ap_ok = WiFi.softAP(CLUSTER_WIFI_SSID, CLUSTER_WIFI_PASSPHRASE);
   delay(200);
@@ -366,6 +457,7 @@ static void cluster_setup_wifi_demo() {
 #elif CLUSTER_ROLE_WORKER
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
   WiFi.begin(CLUSTER_WIFI_SSID, CLUSTER_WIFI_PASSPHRASE);
   Serial.printf("CLUSTER_WIFI_STA_CONNECTING board_id=%u ssid=%s\n", (unsigned)CLUSTER_BOARD_ID,
                 CLUSTER_WIFI_SSID);
@@ -392,11 +484,17 @@ static void cluster_setup_wifi_demo() {
 #if CLUSTER_ENABLE_OTA
   cluster_setup_ota();
 #endif
+#if CLUSTER_ENABLE_HTTP_UPDATE
+  cluster_setup_http_update();
+#endif
 }
 
 static void cluster_loop_wifi_demo() {
 #if CLUSTER_ENABLE_OTA
   ArduinoOTA.handle();
+#endif
+#if CLUSTER_ENABLE_HTTP_UPDATE
+  cluster_http_update_server.handleClient();
 #endif
   cluster_handle_udp_packet();
 
