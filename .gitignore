@@ -13,3 +13,4 @@ analysis/
 *.log
 .pioenvs/
 .piolibdeps/
+src/wifi_secrets.local.h

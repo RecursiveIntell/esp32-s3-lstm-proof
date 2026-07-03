@@ -67,6 +67,13 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - 2026-07-03: `pio run -e cluster_worker1` — SUCCESS
   - 2026-07-03: `pio run -e cluster_worker2` — SUCCESS
 - [ ] Task 1.3 WiFi worker PING/PONG server proof (UDP)
+  - 2026-07-03: Phase 1.3 firmware artifacts prepared, not flashed.
+  - Build envs:
+    - `cluster_coord_ap_ping`: coordinator board `0`, SoftAP mode, UDP PING broadcast on port `42100`
+    - `cluster_worker1_ap_ping`: worker board `1`, station mode, UDP PING/PONG on port `42100`
+    - `cluster_worker2_ap_ping`: worker board `2`, station mode, UDP PING/PONG on port `42100`
+  - Flash helper dry-run: `python3 tools/flash_cluster_wifi.py --role coord|worker1|worker2 --port <serial-port>`
+  - No-flash status: hardware flashing intentionally not performed during artifact preparation.
 - [ ] Task 1.4 two-worker WiFi barrier sync proof (UDP with fallback notes)
 - [ ] Task 1.5 Coordinator AP and OTA provisioning plan
 

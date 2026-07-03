@@ -12,6 +12,9 @@
 
 #include "cluster_protocol.h"
 
+#ifndef CLUSTER_WIFI_PING_ONLY
+#define CLUSTER_WIFI_PING_ONLY 0
+#endif
 #ifndef CLUSTER_BOARD_ID
 #define CLUSTER_BOARD_ID 0
 #endif
@@ -20,6 +23,28 @@
 #endif
 #ifndef CLUSTER_ROLE_WORKER
 #define CLUSTER_ROLE_WORKER 0
+#endif
+
+#if CLUSTER_WIFI_PING_ONLY
+#include <WiFi.h>
+#include <WiFiUdp.h>
+
+#if __has_include("wifi_secrets.local.h")
+#include "wifi_secrets.local.h"
+#endif
+
+#ifndef CLUSTER_WIFI_AP_MODE
+#define CLUSTER_WIFI_AP_MODE 0
+#endif
+#ifndef CLUSTER_WIFI_SSID
+#define CLUSTER_WIFI_SSID "RI-ESP-CLUSTER"
+#endif
+#ifndef CLUSTER_WIFI_PASSPHRASE
+#define CLUSTER_WIFI_PASSPHRASE "localfirstai"
+#endif
+#ifndef CLUSTER_WIFI_UDP_PORT
+#define CLUSTER_WIFI_UDP_PORT 42100
+#endif
 #endif
 
 extern "C" {
@@ -56,6 +81,181 @@ static const char *UTILITY_SEEDS[UTILITY_SEED_COUNT] = {
   "safe action is ",
   "local first means "
 };
+
+#if CLUSTER_WIFI_PING_ONLY
+static WiFiUDP cluster_udp;
+static uint32_t cluster_ping_seq = 1;
+static uint32_t cluster_last_ping_ms = 0;
+static uint32_t cluster_last_status_ms = 0;
+static constexpr uint8_t CLUSTER_BROADCAST_BOARD = 255;
+static const IPAddress CLUSTER_AP_IP(192, 168, 4, 1);
+static const IPAddress CLUSTER_AP_GATEWAY(192, 168, 4, 1);
+static const IPAddress CLUSTER_AP_NETMASK(255, 255, 255, 0);
+static const IPAddress CLUSTER_AP_BROADCAST(192, 168, 4, 255);
+
+static void cluster_print_ip(const char *label, IPAddress ip) {
+  Serial.printf("%s=%u.%u.%u.%u", label, ip[0], ip[1], ip[2], ip[3]);
+}
+
+static bool cluster_send_packet(IPAddress ip, uint16_t port, uint8_t msg_type, uint8_t dst_board,
+                                uint32_t seq) {
+  uint8_t packet[cluster_protocol::CLUSTER_PACKET_HEADER_SIZE];
+  size_t packet_len = 0;
+  if (!cluster_protocol::encode_packet(msg_type, (uint8_t)CLUSTER_BOARD_ID, dst_board, seq,
+                                       nullptr, 0, packet, sizeof(packet), &packet_len)) {
+    Serial.println("CLUSTER_WIFI_ERROR encode_failed");
+    return false;
+  }
+  if (!cluster_udp.beginPacket(ip, port)) {
+    Serial.println("CLUSTER_WIFI_ERROR begin_packet_failed");
+    return false;
+  }
+  cluster_udp.write(packet, packet_len);
+  if (!cluster_udp.endPacket()) {
+    Serial.println("CLUSTER_WIFI_ERROR end_packet_failed");
+    return false;
+  }
+  return true;
+}
+
+static void cluster_handle_udp_packet() {
+  int packet_size = cluster_udp.parsePacket();
+  if (packet_size <= 0) return;
+  if (packet_size > 256) {
+    Serial.printf("CLUSTER_WIFI_DROP reason=too_large bytes=%d from=%s:%u\n",
+                  packet_size, cluster_udp.remoteIP().toString().c_str(), cluster_udp.remotePort());
+    while (cluster_udp.available() > 0) cluster_udp.read();
+    return;
+  }
+
+  uint8_t packet[256];
+  int read_len = cluster_udp.read(packet, sizeof(packet));
+  cluster_protocol::ClusterPacketHeader header;
+  const uint8_t *payload = nullptr;
+  size_t payload_len = 0;
+  cluster_protocol::ClusterDecodeStatus status =
+      cluster_protocol::decode_packet(packet, (size_t)read_len, &header, &payload, &payload_len);
+  if (status != cluster_protocol::CLUSTER_DECODE_OK) {
+    Serial.printf("CLUSTER_WIFI_DROP reason=decode_%u bytes=%d from=%s:%u\n",
+                  (unsigned)status, read_len, cluster_udp.remoteIP().toString().c_str(),
+                  cluster_udp.remotePort());
+    return;
+  }
+
+  if (header.msg_type == cluster_protocol::CLUSTER_MSG_PING) {
+#if CLUSTER_ROLE_WORKER
+    if (header.dst_board == CLUSTER_BROADCAST_BOARD || header.dst_board == (uint8_t)CLUSTER_BOARD_ID) {
+      bool ok = cluster_send_packet(cluster_udp.remoteIP(), cluster_udp.remotePort(),
+                                    cluster_protocol::CLUSTER_MSG_PONG, header.src_board, header.seq);
+      Serial.printf("CLUSTER_WIFI_PING board=%u seq=%lu from_board=%u from=%s:%u reply=%s rssi=%ld\n",
+                    (unsigned)CLUSTER_BOARD_ID, (unsigned long)header.seq, (unsigned)header.src_board,
+                    cluster_udp.remoteIP().toString().c_str(), cluster_udp.remotePort(), ok ? "sent" : "failed",
+                    (long)WiFi.RSSI());
+    }
+#endif
+    return;
+  }
+
+  if (header.msg_type == cluster_protocol::CLUSTER_MSG_PONG) {
+#if CLUSTER_ROLE_COORD
+    Serial.printf("CLUSTER_WIFI_PONG src_board=%u seq=%lu from=%s:%u rssi=%ld\n",
+                  (unsigned)header.src_board, (unsigned long)header.seq,
+                  cluster_udp.remoteIP().toString().c_str(), cluster_udp.remotePort(), (long)WiFi.RSSI());
+#endif
+    return;
+  }
+
+  Serial.printf("CLUSTER_WIFI_DROP reason=unexpected_msg type=%u src_board=%u seq=%lu\n",
+                (unsigned)header.msg_type, (unsigned)header.src_board, (unsigned long)header.seq);
+}
+
+static void cluster_setup_wifi_ping_only() {
+  Serial.begin(115200);
+  delay(1500);
+  Serial.printf("\nESP32-S3 cluster WiFi ping-only boot board_id=%u role=%s\n",
+                (unsigned)CLUSTER_BOARD_ID,
+#if CLUSTER_ROLE_COORD
+                "coord"
+#elif CLUSTER_ROLE_WORKER
+                "worker"
+#else
+                "unknown"
+#endif
+  );
+  Serial.printf("CLUSTER_WIFI_CONFIG ssid=%s port=%u ap_mode=%u\n",
+                CLUSTER_WIFI_SSID, (unsigned)CLUSTER_WIFI_UDP_PORT, (unsigned)CLUSTER_WIFI_AP_MODE);
+
+#if CLUSTER_ROLE_COORD
+#if CLUSTER_WIFI_AP_MODE
+  WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(CLUSTER_AP_IP, CLUSTER_AP_GATEWAY, CLUSTER_AP_NETMASK);
+  bool ap_ok = WiFi.softAP(CLUSTER_WIFI_SSID, CLUSTER_WIFI_PASSPHRASE);
+  delay(200);
+  Serial.printf("CLUSTER_WIFI_AP_READY ok=%u ssid=%s ", ap_ok ? 1 : 0, CLUSTER_WIFI_SSID);
+  cluster_print_ip("ip", WiFi.softAPIP());
+  Serial.printf(" port=%u\n", (unsigned)CLUSTER_WIFI_UDP_PORT);
+#else
+  Serial.println("CLUSTER_WIFI_ERROR coord_requires_CLUSTER_WIFI_AP_MODE");
+#endif
+#elif CLUSTER_ROLE_WORKER
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(CLUSTER_WIFI_SSID, CLUSTER_WIFI_PASSPHRASE);
+  Serial.printf("CLUSTER_WIFI_STA_CONNECTING board_id=%u ssid=%s\n", (unsigned)CLUSTER_BOARD_ID,
+                CLUSTER_WIFI_SSID);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print('.');
+  }
+  Serial.println();
+  Serial.printf("CLUSTER_WIFI_WORKER_READY board_id=%u ", (unsigned)CLUSTER_BOARD_ID);
+  cluster_print_ip("ip", WiFi.localIP());
+  Serial.printf(" rssi=%ld port=%u\n", (long)WiFi.RSSI(), (unsigned)CLUSTER_WIFI_UDP_PORT);
+#else
+  Serial.println("CLUSTER_WIFI_ERROR missing_cluster_role");
+#endif
+
+  if (cluster_udp.begin(CLUSTER_WIFI_UDP_PORT)) {
+    Serial.printf("CLUSTER_WIFI_UDP_READY board_id=%u port=%u\n", (unsigned)CLUSTER_BOARD_ID,
+                  (unsigned)CLUSTER_WIFI_UDP_PORT);
+  } else {
+    Serial.printf("CLUSTER_WIFI_UDP_FAILED board_id=%u port=%u\n", (unsigned)CLUSTER_BOARD_ID,
+                  (unsigned)CLUSTER_WIFI_UDP_PORT);
+  }
+}
+
+static void cluster_loop_wifi_ping_only() {
+  cluster_handle_udp_packet();
+
+#if CLUSTER_ROLE_COORD
+  uint32_t now = millis();
+  if (now - cluster_last_ping_ms >= 2000) {
+    cluster_last_ping_ms = now;
+    uint32_t seq = cluster_ping_seq++;
+    bool ok = cluster_send_packet(CLUSTER_AP_BROADCAST, CLUSTER_WIFI_UDP_PORT,
+                                  cluster_protocol::CLUSTER_MSG_PING, CLUSTER_BROADCAST_BOARD, seq);
+    Serial.printf("CLUSTER_WIFI_PING_BROADCAST seq=%lu dst=%s port=%u sent=%s\n",
+                  (unsigned long)seq, CLUSTER_AP_BROADCAST.toString().c_str(),
+                  (unsigned)CLUSTER_WIFI_UDP_PORT, ok ? "true" : "false");
+  }
+#elif CLUSTER_ROLE_WORKER
+  uint32_t now = millis();
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("CLUSTER_WIFI_STA_DISCONNECTED reconnecting=true");
+    WiFi.reconnect();
+    delay(500);
+    return;
+  }
+  if (now - cluster_last_status_ms >= 5000) {
+    cluster_last_status_ms = now;
+    Serial.printf("CLUSTER_WIFI_WORKER_STATUS board_id=%u ", (unsigned)CLUSTER_BOARD_ID);
+    cluster_print_ip("ip", WiFi.localIP());
+    Serial.printf(" rssi=%ld port=%u\n", (long)WiFi.RSSI(), (unsigned)CLUSTER_WIFI_UDP_PORT);
+  }
+#endif
+
+  delay(10);
+}
+#endif
 
 enum DType : uint8_t { F32 = 0, I8 = 1, I4 = 2 };
 
@@ -769,6 +969,11 @@ void poll_serial_language_commands() {
 }
 
 void setup() {
+#if CLUSTER_WIFI_PING_ONLY
+  cluster_setup_wifi_ping_only();
+  return;
+#endif
+
   Serial.begin(115200);
   delay(1500);
   Serial.println("\nESP32-S3 LSTM boot p22 i4 recurrent SIMD+dualcore");
@@ -801,6 +1006,11 @@ void setup() {
 }
 
 void loop() {
+#if CLUSTER_WIFI_PING_ONLY
+  cluster_loop_wifi_ping_only();
+  return;
+#endif
+
   poll_serial_language_commands();
   static uint32_t last_idle = 0;
   if (millis() - last_idle >= 5000) {
