@@ -2,11 +2,11 @@
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task after the user explicitly says to execute it. Keep proof receipts after every hardware phase.
 
-**Goal:** Build a 3x ESP32-S3 tensor-parallel language-model cluster that runs a quantized TinyStories-class BPE model locally, with sensor-grounded prompts and hardware receipts.
+**Goal:** Build a 3x ESP32-S3 tensor-parallel language-model cluster that runs a quantized TinyStories-class BPE model locally, with sensor-grounded prompts and hardware receipts. The software should be useful for people with very little resources.
 
-**Architecture:** One coordinator board owns the serial/host interface, prompt/token loop, tokenization, sampling, and receipt emission. Three ESP32-S3 boards each own one shard of the model weights and execute tensor-parallel slices of the forward pass. Start with a small cluster-proof model and wire protocol, then graduate to a TinyStories-33M int4/int8 hybrid model only after transport, synchronization, sharding, and correctness are proven.
+**Architecture:** One coordinator board owns the host control loop, prompt/tokenization, sampling, and receipt emission. Three ESP32-S3 boards each own one shard of the model weights and execute tensor-parallel slices of the forward pass. Start with a small cluster-proof model and transport proof over WiFi, then graduate to a TinyStories-33M int4/int8 hybrid model only after transport, synchronization, sharding, and correctness are proven.
 
-**Tech Stack:** PlatformIO Arduino ESP32-S3 firmware, ESP-NN / custom Xtensa SIMD kernels, packed int4 weights, Python model-export tooling, Python host harness, UART/SPI transport first, optional WiFi later, receipt-based verification.
+**Tech Stack:** PlatformIO Arduino ESP32-S3 firmware, ESP-NN / custom Xtensa SIMD kernels, packed int4 weights, Python model-export tooling, Python host harness, WiFi runtime transport (UDP-first, TCP fallback), OTA update flow, receipt-based verification.
 
 ---
 
@@ -78,8 +78,9 @@ Reason:
 ## Non-negotiable claim boundaries
 
 Safe claims after Phase 1:
-- “3 ESP32-S3 boards can coordinate tensor-sharded inference over a local transport.”
-- “Transport latency and synchronization were measured on hardware.”
+- “3 ESP32-S3 boards can coordinate tensor-sharded inference over WiFi transport.”
+- “Transport latency and synchronization were measured on hardware with packet-level retries/timeouts.”
+- “The system can operate without internet when the coordinator acts as a local WiFi AP/gateway.”
 
 Safe claims after Phase 2:
 - “A sharded model path reproduces the single-board reference within the configured tolerance.”
@@ -107,26 +108,20 @@ Minimum 3-board cluster:
 - Board 1: worker + shard 1
 - Board 2: worker + shard 2
 
-Recommended physical wiring for v1:
+Runtime transport is WiFi-first in normal operation; board-to-board transport requires no wiring after flashing.
 
-- Common ground between all boards
-- Dedicated UART coordinator -> worker 1
-- Dedicated UART coordinator -> worker 2
-- Optional worker -> coordinator return UARTs if full duplex pins are available
-- USB serial from coordinator to host PC
+Role of USB in normal operation:
+- USB is retained for flashing, debug logs, and optional host control.
+- Workers do not need USB during normal inference after initial flash/OTA.
 
-Preferred v1 transport:
-- UART first, not WiFi.
+Deployment modes:
+- Existing-LAN mode: coordinator and workers join an existing WiFi network and communicate locally on that subnet.
+- Coordinator AP/gateway mode: coordinator creates a private AP, workers join it, and cluster traffic flows locally. This mode does not require internet.
 
-Why UART first:
-- Deterministic enough for phase-1 receipts
-- Easier to debug with logic analyzer / serial logs
-- No WiFi jitter hidden inside benchmark numbers
-- No pairing/provisioning complexity
-
-Future transport after correctness:
-- SPI coordinator-master, worker-slave if UART bandwidth becomes limiting.
-- WiFi only after wired transport has receipts.
+Transport recommendation:
+- Prefer UDP for inference and barrier packets using existing packet framing, CRC, and sequence numbers.
+- Add retry + timeout + duplicate suppression for every request/response class.
+- Use TCP only as fallback/control-plane when UDP packet behavior is unstable in a given deployment.
 
 ---
 
@@ -290,6 +285,25 @@ Performance gate format:
 
 ---
 
+### Task 0.4: Define WiFi operation model and OTA provisioning
+
+**Objective:** Document deployment assumptions for users with limited infrastructure.
+
+**Steps:**
+1. Document both WiFi modes:
+   - Existing-LAN mode
+   - Coordinator AP/gateway mode (no internet required)
+2. Define bootstrap process:
+   - one-time USB flash for coordinator and each worker
+   - store runtime SSID/credentials in NVS or similar config partition
+3. Add OTA update model:
+   - coordinator fetches OTA manifest from host path
+   - workers receive OTA payloads through relay path
+   - workers validate CRC and boot only validated firmware image
+4. Capture dev-ops boundary:
+   - one USB link to coordinator is sufficient during development
+   - workers can run from wall/battery once flashed
+
 ## Phase 1: Multi-board transport proof
 
 ### Task 1.1: Add board role configuration
@@ -390,9 +404,9 @@ Message types:
 **Commit:**
 - `git add src/cluster_protocol.h tools/test_cluster_protocol.py && git commit -m "cluster: add packet framing protocol"`
 
-### Task 1.3: Add worker echo firmware mode
+### Task 1.3: Add WiFi worker PING/PONG server mode
 
-**Objective:** Prove coordinator can send packet to worker and receive response.
+**Objective:** Prove coordinator can send UDP ping packets and receive valid pong responses over WiFi.
 
 **Files:**
 - Modify: `/home/sikmindz/projects/esp32-s3-lstm-proof/src/main.cpp`
@@ -400,40 +414,42 @@ Message types:
 
 **Steps:**
 1. Worker boot prints:
-   - `CLUSTER_WORKER_READY board_id=N`
-2. Coordinator sends `PING seq=N`.
-3. Worker replies `PONG seq=N`.
-4. Host script logs latency.
+  - `CLUSTER_WORKER_READY board_id=N`
+2. Coordinator sends `PING` packets with frame type + seq + CRC on UDP.
+3. Worker replies `PONG` with sequence echo and CRC.
+4. Host script logs RTT, retry count, and packet loss.
 
 **Verification:**
-- Flash worker 1 and coordinator.
+- Flash coordinator and workers (USB for first flash; OTA accepted for workers after provisioning).
 - Run:
-  - `python3 tools/cluster_ping.py --coord /dev/ttyACM0 --count 100`
+  - `python3 tools/cluster_ping.py --coord 10.0.0.10 --workers 10.0.0.11,10.0.0.12 --count 100 --mode udp --require-ack`
 - Expected:
-  - 100/100 PONG
+  - 100/100 PONG per worker
   - p50 latency and p99 latency printed
-  - no CRC failures
+  - bounded retries and no CRC failures
 
 **Commit:**
-- `git add src/main.cpp tools/cluster_ping.py && git commit -m "cluster: prove coordinator-worker ping"`
+- `git add tools/cluster_ping.py && git commit -m "cluster: prove WiFi coordinator-worker ping"`
 
-### Task 1.4: Extend ping to two workers
+### Task 1.4: Extend to two-worker WiFi barrier sync
 
-**Objective:** Prove the coordinator can synchronize both workers in one token-step barrier.
+**Objective:** Prove coordinator and workers complete per-token barrier steps over UDP with sequence-safe synchronization.
 
 **Files:**
-- Modify: `/home/sikmindz/projects/esp32-s3-lstm-proof/tools/cluster_ping.py`
-- Modify: `/home/sikmindz/projects/esp32-s3-lstm-proof/src/main.cpp`
+- Extend: `/home/sikmindz/projects/esp32-s3-lstm-proof/tools/cluster_ping.py`
+- Optional TCP fallback test script (out-of-band): `/home/sikmindz/projects/esp32-s3-lstm-proof/tools/cluster_barrier_tcp.py`
 
 **Verification:**
 - Run 100 barrier rounds.
 - Expected:
-  - worker 1 PONG count = 100
-  - worker 2 PONG count = 100
-  - coordinator reports barrier p50/p99 latency
+  - worker 1 barrier ACK count = 100
+  - worker 2 barrier ACK count = 100
+  - coordinator reports barrier p50/p99 latency and retry rate
+  - no token-step mismatch across workers
+  - fallback to TCP only if UDP retry budget is exceeded in sustained test
 
 **Commit:**
-- `git add src/main.cpp tools/cluster_ping.py && git commit -m "cluster: prove two-worker synchronization"`
+- `git add tools/cluster_ping.py && git commit -m "cluster: add two-worker WiFi barrier sync"`
 
 ---
 
@@ -905,18 +921,19 @@ Message types:
 
 ## Engineering risks and kill criteria
 
-### Risk 1: UART transport too slow
+### Risk 1: WiFi transport jitter too high for stable token cadence
 
 Symptom:
-- transport is >30% of token time.
+- transport/retry cost is >30% of token time or token barrier stability fails.
 
 Mitigation:
 - top-k logits instead of full logits
 - binary packets only
-- move to SPI coordinator-master after Phase 2
+- keep packet frame/CRC/seq and backoff retries tuned
+- switch barrier-critical traffic to TCP only if UDP proves unreliable
 
 Kill criterion:
-- If UART prevents even H256 cluster proof from matching p22 within reasonable latency, do not attempt TinyStories over UART.
+- If WiFi jitter + retries prevents H256 cluster proof from matching p22 within reasonable latency, do not attempt TinyStories until transport policy is reworked.
 
 ### Risk 2: Numeric drift changes outputs
 

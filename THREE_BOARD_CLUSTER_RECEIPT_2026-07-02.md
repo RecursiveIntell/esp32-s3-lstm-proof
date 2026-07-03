@@ -5,11 +5,14 @@ Status: stub
 ## Purpose
 
 Track the live implementation plan for a 3-board ESP32-S3 tensor-parallel cluster, including claims, hardware inventory, and phase evidence.
+This deployment plan is intentionally targeted at users with minimal local infrastructure.
 
 ## Claim Boundary
 
 - Do not claim TinyStories model behavior (or performance) until a validated TinyStories hardware run is recorded.
 - Do not claim the 3-board cluster hardware path is production-ready until phase-level evidence confirms transport, sharding, and generation behavior across all boards.
+- Do not claim internet or cloud access is required for local inference.
+- Do claim that coordinator AP/gateway mode operates without upstream internet after provisioning.
 
 ## Phase 0 Evidence Completed
 
@@ -32,12 +35,20 @@ Track the live implementation plan for a 3-board ESP32-S3 tensor-parallel cluste
   - `BOARD_0_PORT: <TODO>`
   - `BOARD_1_PORT: <TODO>`
   - `BOARD_2_PORT: <TODO>`
-- Transport wiring:
-  - `COORDINATOR_TO_WORKER_1_UART: <TODO>`
-  - `COORDINATOR_TO_WORKER_2_UART: <TODO>`
-  - `WORKER_1_TO_COORD_UART: <TODO>`
-  - `WORKER_2_TO_COORD_UART: <TODO>`
-  - `COMMON_GND: <TODO>`
+- Transport mode:
+  - `TRANSPORT_MODE: WiFi`
+  - `WIFI_MODE_LAN_OR_AP: <TODO> # Existing LAN or Coordinator AP`
+  - `COORDINATOR_WIFI_SSID: <TODO>`
+  - `COORDINATOR_WIFI_IP: <TODO>`
+  - `WORKER_1_WIFI_IP: <TODO>`
+  - `WORKER_2_WIFI_IP: <TODO>`
+- USB usage:
+  - `DEVELOPMENT_USB_TO_COORDINATOR_ONLY: true`
+  - `WORKER_USB_REQUIRED_IN_RUN: false`
+- WiFi mode claims:
+  - `WIFI_UDP_PREFERRED: true`
+  - `WIFI_TCP_FALLBACK_ALLOWED: true`
+  - `CLUSTER_MODE_AP_WITHOUT_INTERNET: true`
 - Model shard hashes:
   - `shard_0_hash: <TODO>`
   - `shard_1_hash: <TODO>`
@@ -55,8 +66,9 @@ Track the live implementation plan for a 3-board ESP32-S3 tensor-parallel cluste
   - 2026-07-03: `pio run -e cluster_coord` — SUCCESS
   - 2026-07-03: `pio run -e cluster_worker1` — SUCCESS
   - 2026-07-03: `pio run -e cluster_worker2` — SUCCESS
-- [ ] Task 1.3 worker echo firmware proof
-- [ ] Task 1.4 two-worker barrier sync proof
+- [ ] Task 1.3 WiFi worker PING/PONG server proof (UDP)
+- [ ] Task 1.4 two-worker WiFi barrier sync proof (UDP with fallback notes)
+- [ ] Task 1.5 Coordinator AP and OTA provisioning plan
 
 ## Phase 2: Sharded matmul proof with synthetic data
 
