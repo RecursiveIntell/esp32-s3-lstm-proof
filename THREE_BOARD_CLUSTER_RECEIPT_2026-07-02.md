@@ -233,6 +233,28 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - HTTP update receipt: `CLUSTER_HTTP_UPDATE_READY board_id=1 ip=192.168.4.3 port=8080 endpoint=/update`
   - brownout check after low-TX flash: `BROWNOUT_RST False`.
   - build verification after patch: `cluster_worker1_ap_matmul`, `cluster_worker2_ap_matmul`, and `cluster_coord_ap_matmul` all build SUCCESS.
+- 2026-07-03 worker1 USB flash to dual-slot relay-compatible firmware:
+  - command: `python3 tools/flash_cluster_wifi.py --role worker1 --mode matmul --port /dev/ttyACM1 --execute`
+  - result: SUCCESS
+  - hardware MAC: `a4:cb:8f:d9:24:ec`
+  - partition fix present: dual 1MiB OTA app slots (`app0` + `app1`), worker firmware size `773949 / 1048576` bytes.
+  - build verification before flash: `python3 tools/test_cluster_protocol.py` PASS; `python3 -m py_compile tools/*.py` PASS; `pio run -e cluster_worker1_ap_matmul` SUCCESS.
+  - boot receipt: `ESP32-S3 cluster WiFi demo boot board_id=1 role=worker mode=matmul`
+  - WiFi receipt: `CLUSTER_WIFI_WORKER_READY board_id=1 ip=192.168.4.3 rssi=-38 port=42100`
+  - OTA receipt: `CLUSTER_OTA_READY board_id=1 hostname=ri-esp-cluster-worker1 ip=192.168.4.3 port=3232`
+  - HTTP update receipt: `CLUSTER_HTTP_UPDATE_READY board_id=1 ip=192.168.4.3 port=8080 endpoint=/update`
+  - brownout check after flash: `BROWNOUT_RST False`.
+  - live worker matmul receipt after flash: `CLUSTER_MATMUL_WORKER board=1 seq=106 fixture=2 dot=88 expected=88 ok=true reply=sent rssi=-38`.
+- 2026-07-03 worker1 coordinator-relayed HTTP update proof:
+  - command: `python3 tools/relay_worker_update.py --role worker1 --mode matmul --port /dev/ttyACM0 --wait-worker --relay-timeout 240 --execute`
+  - result: SUCCESS
+  - relay start: `CLUSTER_RELAY_UPDATE_START board=1 ip=192.168.4.3 port=8080 bytes=774320`
+  - relay ready: `CLUSTER_RELAY_UPDATE_READY_FOR_BYTES board=1 bytes=774320`
+  - relay final progress: `CLUSTER_RELAY_UPDATE_PROGRESS board=1 sent=774320 total=774320`
+  - worker HTTP response: `HTTP/1.1 200 OK`; body `OK`
+  - relay end: `CLUSTER_RELAY_UPDATE_END board=1 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=86714`
+  - post-relay cluster verifier: `PASS cluster matmul fixture=1 seq=139 worker1=272 worker2=-408 total=-136; fixture=2 seq=138 worker1=88 worker2=-80 total=8`
+  - brownout check in post-relay worker serial window: `BROWNOUT_RST False`.
 - 2026-07-03 worker2 USB flash to OTA-enabled matmul firmware:
   - command: `python3 tools/flash_cluster_wifi.py --role worker2 --mode matmul --port /dev/ttyACM1 --execute`
   - result: SUCCESS
