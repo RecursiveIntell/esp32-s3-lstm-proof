@@ -1,6 +1,6 @@
-# ESP32-S3 On-Device Language Model — 32.59 chars/s (~8 BPE tok/s)
+# ESP32-S3 On-Device Language Model — 39.52 chars/s (~9.9 BPE tok/s)
 
-A char-level LSTM running at **32.59 characters/second** (**~8 BPE-equivalent tokens/second**) on a **$4 ESP32-S3** microcontroller. No GPU. No cloud. Just Rust, C++, and hardware-verified receipts.
+A char-level LSTM running at **39.52 characters/second** (**~9.9 BPE-equivalent tokens/second**) on a **$4 ESP32-S3** microcontroller, plus a three-board coordinator-AP cluster proof with relay-updatable workers. No GPU. No cloud. Just Rust, C++, and hardware-verified receipts.
 
 > **Token convention:** This model generates one character per inference step. Standard LLM benchmarks use BPE/WordPiece tokens. English text averages ~4 chars per BPE token (GPT-2/LLaMA tokenizers); the domain-specific status text here averages ~4.5 chars/token. We report both metrics. When comparing to LLM tok/s benchmarks, use the BPE-equivalent column.
 
@@ -13,7 +13,8 @@ A char-level LSTM running at **32.59 characters/second** (**~8 BPE-equivalent to
 | p7 ESP-NN SIMD | H512 mixed | 6.34M | 3.69 | 0.92 | 271 | 6.04x | yes |
 | p12 ESP-NN aligned | H256 all-int8 | 1.60M | 25.07 | 6.27 | 40 | 41.0x | yes |
 | p14 curated | H320 all-int8 | 2.49M | 17.22 | 4.30 | 58 | 28.2x | yes |
-| **p16 SRAM+dual-core** | **H256 all-int8** | **1.60M** | **32.59** | **~8.15** | **31** | **53.3x** | **yes** |
+| p16 SRAM+dual-core | H256 all-int8 | 1.60M | 32.59 | ~8.15 | 31 | 53.3x | yes |
+| **p22 int4+SIMD** | **H256 all-int8** | **1.60M** | **39.52** | **~9.88** | **25.30** | **64.7x** | **yes** |
 
 BPE tok/s uses the standard 4.0 chars/token ratio for English. Domain-specific status text (e.g. "check airflow.") averages ~4.5 chars/token, giving ~7.2 BPE tok/s.
 
@@ -173,6 +174,36 @@ This work includes 8 no_std Rust crates published on crates.io:
 cargo add ri-esp-proof
 cargo add ri-esp-llm
 ```
+
+## Three-board cluster proof
+
+Final hardware state:
+
+- coordinator: ESP32-S3 SoftAP `RI-ESP-CLUSTER`, IP `192.168.4.1`, USB control on `/dev/ttyACM0`
+- worker1: ESP32-S3 station, dual-slot OTA app partitions, HTTP `/update`, relay update proven
+- worker2: ESP32-S3 station, dual-slot OTA app partitions, HTTP `/update`, relay update proven
+
+Verified final cluster receipt:
+
+```text
+PASS cluster matmul fixture=1 seq=447 worker1=272 worker2=-408 total=-136; fixture=2 seq=446 worker1=88 worker2=-80 total=8
+```
+
+What this proves:
+
+- coordinator AP mode works without upstream internet
+- UDP packet framing/CRC/gather works across two workers
+- worker1 and worker2 compute deterministic int8 and packed-int4 shard fixtures correctly
+- coordinator serial relay can update workers without future worker USB cycles
+
+Relay update receipts:
+
+```text
+worker1: CLUSTER_RELAY_UPDATE_END board=1 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=86714
+worker2: CLUSTER_RELAY_UPDATE_END board=2 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=86717
+```
+
+Boundary: this is a hardware-verified sharded matmul / fleet-update proof, not a claim that full recurrent H256 LSTM generation is distributed over WiFi. The useful language path remains the single-board H256 p22 engine plus deterministic local sentinel policy.
 
 ## Related repos
 

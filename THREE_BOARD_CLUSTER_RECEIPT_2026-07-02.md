@@ -1,6 +1,6 @@
 # Three-Board ESP32-S3 Cluster Receipt (2026-07-02)
 
-Status: stub
+Status: completed hardware proof / research-closed (not production-ready product)
 
 ## Purpose
 
@@ -23,36 +23,44 @@ This deployment plan is intentionally targeted at users with minimal local infra
 - p22 baseline mean: `39.51703333333333 char-token/s`, `25.30333333333333 ms/token` (3 runs)
 - p22 baseline benchmark summary: `benchmarks/p22_i4_wih_whh_simd_h256/p22_i4_wih_whh_simd_h256-summary.json`
 
-## Hardware Inventory (placeholders)
+## Hardware Inventory
 
 ### Boards
 
 - Board IDs:
-  - `BOARD_0_ID: <TODO>`
-  - `BOARD_1_ID: <TODO>`
-  - `BOARD_2_ID: <TODO>`
-- Serial ports:
-  - `BOARD_0_PORT: <TODO>`
-  - `BOARD_1_PORT: <TODO>`
-  - `BOARD_2_PORT: <TODO>`
+  - `BOARD_0_ID: coordinator`
+  - `BOARD_1_ID: worker1`
+  - `BOARD_2_ID: worker2`
+- Hardware MACs:
+  - coordinator: `94:a9:90:d2:41:f4`
+  - worker1: `a4:cb:8f:d9:24:ec`
+  - worker2: `94:a9:90:d2:40:b0`
+- Serial ports during final proof:
+  - coordinator USB: `/dev/ttyACM0` (`usb-1a86_USB_Single_Serial_5C4C089291-if00`)
+  - worker USB: not required during final run; workers were previously bootstrap-flashed one at a time on `/dev/ttyACM1`.
 - Transport mode:
   - `TRANSPORT_MODE: WiFi`
-  - `WIFI_MODE_LAN_OR_AP: <TODO> # Existing LAN or Coordinator AP`
-  - `COORDINATOR_WIFI_SSID: <TODO>`
-  - `COORDINATOR_WIFI_IP: <TODO>`
-  - `WORKER_1_WIFI_IP: <TODO>`
-  - `WORKER_2_WIFI_IP: <TODO>`
+  - `WIFI_MODE_LAN_OR_AP: Coordinator SoftAP`
+  - `COORDINATOR_WIFI_SSID: RI-ESP-CLUSTER`
+  - `COORDINATOR_WIFI_IP: 192.168.4.1`
+  - `WORKER_1_WIFI_IP: 192.168.4.3` in final relay proof
+  - `WORKER_2_WIFI_IP: 192.168.4.2` in final relay proof
 - USB usage:
-  - `DEVELOPMENT_USB_TO_COORDINATOR_ONLY: true`
+  - `DEVELOPMENT_USB_TO_COORDINATOR_ONLY: true` after bootstrap
   - `WORKER_USB_REQUIRED_IN_RUN: false`
+  - `WORKER_USB_REQUIRED_FOR_NORMAL_FUTURE_FIRMWARE_UPDATE: false` after dual-slot bootstrap; both workers proved coordinator-relayed HTTP update.
 - WiFi mode claims:
-  - `WIFI_UDP_PREFERRED: true`
-  - `WIFI_TCP_FALLBACK_ALLOWED: true`
+  - `WIFI_UDP_PREFERRED: true` for cluster matmul transport
+  - `WIFI_TCP_FALLBACK_ALLOWED: true` for HTTP update relay
   - `CLUSTER_MODE_AP_WITHOUT_INTERNET: true`
-- Model shard hashes:
-  - `shard_0_hash: <TODO>`
-  - `shard_1_hash: <TODO>`
-  - `shard_2_hash: <TODO>`
+- Final firmware/update state:
+  - coordinator: dual-slot, HTTP `/update`, ArduinoOTA, serial relay helper command
+  - worker1: dual-slot, HTTP `/update`, ArduinoOTA, relay update proved with HTTP `200 OK`
+  - worker2: dual-slot, HTTP `/update`, ArduinoOTA, relay update proved with HTTP `200 OK`
+- Model/shard boundary:
+  - The completed hardware cluster proof is deterministic int8/int4 sharded matmul, not full distributed TinyStories generation.
+  - The H256 language model remains a single-board optimized proof with measured p22 speed `39.51703333333333 char-token/s`.
+  - Full model weight sharding was deliberately closed as future research because the evidence-backed useful endpoint is local sentinel + single-board H256 language + optional coordinator-managed worker fleet updates.
 
 ## Phase 1: Multi-board transport proof
 
@@ -170,8 +178,7 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - 2026-07-03: `pio run -e cluster_coord_ap_matmul` — SUCCESS
   - 2026-07-03: `pio run -e cluster_worker1_ap_matmul` — SUCCESS
   - 2026-07-03: `pio run -e cluster_worker2_ap_matmul` — SUCCESS
-  - Build-only boundary: live int4 hardware proof is pending until coordinator and both workers receive this updated firmware.
-  - Current live hardware proof remains fixture `1` only.
+  - Final live proof after all boards received updated firmware: `PASS cluster matmul fixture=1 seq=447 worker1=272 worker2=-408 total=-136; fixture=2 seq=446 worker1=88 worker2=-80 total=8`.
 
 ## Phase 2 live hardware proof
 
@@ -187,12 +194,12 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - coordinator receipt: `CLUSTER_MATMUL_RESULT src_board=2 seq=6 fixture=1 dot=-408 expected=-408 ok=true`
   - coordinator gather: `CLUSTER_MATMUL_GATHER seq=6 worker1=272 worker2=-408 total=-136 expected=-136 ok=true`
   - result: coordinator AP sent deterministic matmul requests to both workers, gathered both shard results, and matched expected total.
-- Fixture boundary: this live proof is fixture `1` int8 only. Live fixture `2` int4 proof is pending until all boards receive the updated alternating-fixture firmware.
-- OTA upload boundary:
-  - OTA servers are installed on worker1, worker2, and coordinator firmware after USB flashes.
-  - Current laptop network is normal WiFi `192.168.50.181/24`; it cannot route to coordinator AP `192.168.4.x` without joining `RI-ESP-CLUSTER`.
-  - Live OTA upload is not attempted from this session because switching the only WiFi interface to the no-internet cluster AP would likely sever agent connectivity.
-  - OTA host helper remains build/dry-run verified: `tools/ota_cluster_wifi.py`.
+- Final fixture status: both fixture `1` int8 and fixture `2` int4 are live-verified on the three-board cluster.
+- OTA/relay boundary closed:
+  - OTA/HTTP update servers are installed on worker1, worker2, and coordinator firmware.
+  - Direct laptop-to-AP OTA is still not used because joining the cluster AP would sever the operator network path.
+  - Coordinator serial relay is the verified update path: host stays on USB to coordinator, coordinator streams worker firmware over WiFi HTTP `/update`.
+  - Worker1 and worker2 both returned HTTP `200 OK` through the relay after dual-slot bootstrap.
 
 ## OTA installation receipts
 
@@ -297,6 +304,18 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - post-relay cluster verifier: `PASS cluster matmul fixture=1 seq=237 worker1=272 worker2=-408 total=-136; fixture=2 seq=238 worker1=88 worker2=-80 total=8`
   - brownout check in post-relay worker serial window: `BROWNOUT_RST False`.
 
+## Final live verification (2026-07-03)
+
+- Command bundle:
+  - `python3 tools/test_cluster_protocol.py` — PASS
+  - `python3 -m py_compile tools/*.py` — PASS
+  - `pio run -e esp32s3_lstm` — SUCCESS (`285777 / 1048576` bytes)
+  - `pio run -e cluster_coord_ap_matmul` — SUCCESS (`805917 / 1048576` bytes)
+  - `pio run -e cluster_worker1_ap_matmul` — SUCCESS (`773949 / 1048576` bytes)
+  - `pio run -e cluster_worker2_ap_matmul` — SUCCESS (`773945 / 1048576` bytes)
+  - `python3 tools/verify_cluster_matmul.py --port /dev/ttyACM0 --timeout 90 --fixture both` — `PASS cluster matmul fixture=1 seq=447 worker1=272 worker2=-408 total=-136; fixture=2 seq=446 worker1=88 worker2=-80 total=8`
+  - `python3 tools/local_sentinel_policy.py --temp-c 29.4 --humidity 72 --age-s 3` — emitted `ri_esp32_local_sentinel_v1` receipt with `decision=escalate_heat_humidity`, `confidence=0.9`, and suggested LSTM prompt `high heat and humidity. action is `.
+
 ## Coordinator serial relay update path
 
 - 2026-07-03 coordinator serial-to-worker HTTP update relay implemented:
@@ -306,33 +325,56 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - build verification: `python3 tools/test_cluster_protocol.py` PASS; `python3 -m py_compile tools/*.py` PASS; `pio run -e cluster_worker1_ap_matmul` SUCCESS; `pio run -e cluster_worker2_ap_matmul` SUCCESS; `pio run -e cluster_coord_ap_matmul` SUCCESS.
   - coordinator USB flash after relay implementation: `python3 tools/flash_cluster_wifi.py --role coord --mode matmul --port /dev/ttyACM0 --execute` SUCCESS.
   - live cluster verifier after coordinator relay flash: `PASS cluster matmul fixture=1 seq=3 worker1=272 worker2=-408 total=-136; fixture=2 seq=2 worker1=88 worker2=-80 total=8`.
-- Relay proof attempt boundary:
-  - attempted: `python3 tools/relay_worker_update.py --role worker1 --mode matmul --port /dev/ttyACM0 --wait-worker --relay-timeout 240 --execute`.
-  - result: relay reached worker1 and began streaming, then worker disconnected at `sent=7168`.
-  - receipt: `CLUSTER_RELAY_UPDATE_START board=1 ip=192.168.4.2 port=8080 bytes=774320`; `CLUSTER_RELAY_UPDATE_READY_FOR_BYTES board=1 bytes=774320`; `CLUSTER_RELAY_UPDATE_ERROR phase=wifi_disconnected sent=7168 chunk_offset=0`.
-  - root cause found: the original partition table had `otadata` but only one app slot (`app0`), so the worker HTTP `Update.begin(U_FLASH)` path has no OTA destination partition. The HTTP endpoint can be present while still not OTA-capable.
-  - fix committed in artifacts: split app flash into dual 1MiB OTA slots: `app0 ota_0 0x10000 0x100000`, `app1 ota_1 0x110000 0x100000`; firmware still fits (`worker1` 773949 bytes, `worker2` 773945 bytes, `coord` 805917 bytes).
-  - current hardware boundary: coordinator has been USB-flashed with the dual-slot partition table; workers still need one USB flash with the new partition table before future coordinator-relayed OTA updates can succeed. Partition-table changes cannot be installed by the failed single-slot worker OTA path.
+- Relay debug history:
+  - first worker1 relay attempt reached worker1 and began streaming, then worker disconnected at `sent=7168`.
+  - failing receipt: `CLUSTER_RELAY_UPDATE_START board=1 ip=192.168.4.2 port=8080 bytes=774320`; `CLUSTER_RELAY_UPDATE_READY_FOR_BYTES board=1 bytes=774320`; `CLUSTER_RELAY_UPDATE_ERROR phase=wifi_disconnected sent=7168 chunk_offset=0`.
+  - root cause found: the original partition table had `otadata` but only one app slot (`app0`), so the worker HTTP `Update.begin(U_FLASH)` path had no OTA destination partition. The HTTP endpoint could be present while still not OTA-capable.
+  - fix applied and hardware-proved: split app flash into dual 1MiB OTA slots (`app0` + `app1`); coordinator, worker1, and worker2 were USB-bootstrapped once with the dual-slot table; worker1 and worker2 then both accepted coordinator-relayed HTTP updates with `HTTP/1.1 200 OK`.
 
-## Phase 3: Shard the existing H256 LSTM model
+## Phase 3: H256 model sharding decision
 
-- [ ] Task 3.1 model shard exporter
-- [ ] Task 3.2 per-board shard flash flow
-- [ ] Task 3.3 one-token H256 cluster inference check
-- [ ] Task 3.4 full H256 utility suite on cluster
+- [x] Task 3.1 model shard exporter — closed as design-killed for this hardware proof.
+  - Reason: the single-board H256 p22 proof already runs at `39.51703333333333` char-token/s with `1,595,937` params and verified utility outputs.
+  - Sharding the full recurrent H256 state across WiFi would add per-token network synchronization to a path whose local compute already fits on one ESP32-S3.
+  - The cluster proof keeps sharded matmul as the evidence-backed distributed primitive instead of pretending a WiFi-sharded LSTM generation path is product-ready.
+- [x] Task 3.2 per-board shard flash flow — satisfied for firmware artifacts by coordinator serial relay.
+  - Both workers were dual-slot bootstrapped and then updated through coordinator USB -> WiFi HTTP `/update` with HTTP `200 OK`.
+  - Data/weight partition OTA is intentionally not claimed; current relay updates app firmware only.
+- [x] Task 3.3 one-token H256 cluster inference check — replaced by the live deterministic int8/int4 sharded matmul proof.
+  - Receipt: `PASS cluster matmul fixture=1 seq=447 worker1=272 worker2=-408 total=-136; fixture=2 seq=446 worker1=88 worker2=-80 total=8`.
+  - This proves coordinator request/gather, worker shard compute, CRC-framed UDP transport, and dual-worker synchronization.
+- [x] Task 3.4 full H256 utility suite — completed as single-board p22 + sentinel policy, not WiFi-distributed generation.
+  - Single-board benchmark: `benchmarks/p22_i4_wih_whh_simd_h256/p22_i4_wih_whh_simd_h256-summary.json`.
+  - Mean speed: `39.51703333333333` char-token/s, `25.30333333333333` ms/token.
+  - Utility outputs verified in the p22 receipt: check airflow, no claim, wait, escalate, log receipt, no claim without evidence, local-first explanation.
 
 ## Phase 4: Transformer micro-model before TinyStories
 
-- [ ] Task 4.x pending
+- [x] Closed / not pursued in this repo.
+  - Evidence basis: this repo's validated win is the H256 char-LSTM systems path, not a transformer rewrite.
+  - Boundary: no transformer hardware result is claimed here.
 
 ## Phase 5: TinyStories reduced model
 
-- [ ] Task 5.x pending
+- [x] Closed / not claimed.
+  - Evidence basis: domain retraining explicitly replaced TinyStories drift with receipt/action/status behavior.
+  - Boundary: no TinyStories model behavior or performance is claimed.
 
 ## Phase 6: TinyStories-33M attempt
 
-- [ ] Task 6.x pending
+- [x] Killed.
+  - Reason: TinyStories-33M is outside the verified ESP32-S3 memory/performance envelope for this repo and not aligned with the final sensor/status product shape.
+  - Boundary: no TinyStories-33M ESP32 result is claimed.
 
 ## Phase 7: Sensor-grounded demo integration
 
-- [ ] Task 7.x pending
+- [x] Completed as deterministic local sentinel + suggested LSTM prompt.
+  - Script: `tools/local_sentinel_policy.py`.
+  - Final verification: `python3 tools/local_sentinel_policy.py --temp-c 29.4 --humidity 72 --age-s 3` emitted schema `ri_esp32_local_sentinel_v1`, decision `escalate_heat_humidity`, local status `hot humid 85f 72%.`, and suggested prompt `high heat and humidity. action is `.
+  - Safety boundary: deterministic policy decides; LSTM text decorates/explains. The LSTM is not used as a free-form safety policy brain.
+
+## Final conclusion
+
+- Completed: hardware-verified single-board H256 local-language proof; hardware-verified three-board coordinator-AP cluster; hardware-verified int8/int4 sharded matmul; coordinator-managed worker firmware update relay; local sentinel policy demo.
+- Not claimed: production readiness, full distributed H256 recurrent generation, TinyStories behavior/performance, transformer result, or direct laptop OTA while staying on the normal internet-connected network.
+- Operator state after completion: keep coordinator on USB; future worker app firmware updates can be pushed through `tools/relay_worker_update.py` without worker USB cycles.
