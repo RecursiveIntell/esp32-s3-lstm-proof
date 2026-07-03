@@ -6,8 +6,9 @@ This document defines the provisioning model for the 3-board ESP32-S3 cluster in
 
 - Transport runtime is WiFi-first in normal operation.
 - Provisioning is split into **first-flash USB bootstrap** and **post-first-flash OTA update flow**.
-- OTA in this document is a **design/procurement plan only** for this phase.
-- OTA implementation, host/orchestration code, and partitioned update mechanics are explicitly out of scope for Phase 1.5.
+- ArduinoOTA support now exists for WiFi cluster firmware modes after the implementation commit.
+- A first USB flash is still required to install OTA-capable firmware before any WiFi update can be pushed.
+- Live OTA upload proof is not claimed until a controller flashes OTA-enabled firmware by USB and records a successful WiFi OTA receipt.
 
 ## 1) No-infrastructure deployment model
 
@@ -45,11 +46,34 @@ Goal: bring all boards to a known-good baseline role/transport state.
 
 Expected safety outcome: once first-flash finishes, USB can be unplugged and cluster runs without host tethering in coordinator AP mode.
 
-## 3) Post-first-flash OTA flow (planned, not yet implemented)
+## 3) Post-first-flash OTA flow (partially implemented)
 
-The intent is to avoid physical intervention after bootstrap while preserving deterministic recovery.
+The immediate implemented path uses ArduinoOTA directly from the host to each board over the coordinator AP network. The broader coordinator-managed, manifest-verified rollout remains planned.
+
+Current host-driven commands:
+
+- `python3 tools/ota_cluster_wifi.py --role coord --mode matmul --ip 192.168.4.1 --execute`
+- `python3 tools/ota_cluster_wifi.py --role worker1 --mode matmul --ip 192.168.4.2 --execute`
+- `python3 tools/ota_cluster_wifi.py --role worker2 --mode matmul --ip 192.168.4.3 --execute`
+
+Expected firmware OTA receipts:
+
+- `CLUSTER_OTA_READY board_id=... hostname=... ip=... port=3232`
+- `CLUSTER_OTA_START type=sketch`
+- `CLUSTER_OTA_PROGRESS percent=...`
+- `CLUSTER_OTA_END ok=1`
+- `CLUSTER_OTA_ERROR code=...`
 
 ### 3.1 Flow overview
+
+Implemented now:
+
+1. Host builds the role/mode-specific PlatformIO environment.
+2. Host runs `espota.py` against the target board IP on port `3232`.
+3. Board accepts ArduinoOTA sketch updates using `CLUSTER_OTA_PASSWORD`.
+4. Board emits OTA serial receipts during the update.
+
+Planned coordinator-managed flow:
 
 1. Coordinator downloads/receives OTA bundle metadata (host-provided artifact + manifest).
 2. Coordinator verifies:
@@ -126,10 +150,11 @@ The intent is to avoid physical intervention after bootstrap while preserving de
 
 ## 8) Explicit claim boundaries (Phase 1.5)
 
-- This is a **provisioning design and operational plan** for no-infrastructure deployments.
-- This document does **not** claim OTA implementation exists in firmware.
+- This is a **provisioning design and operational plan** for no-infrastructure deployments, now with a basic ArduinoOTA implementation path for WiFi cluster firmware modes.
+- Firmware and host helper implementation exists, but no live OTA upload proof is claimed yet.
 - Phase 1.5 evidence remains:
   - coordinator AP proof,
   - worker station joins,
-  - worker enrollment behavior by design only.
-- OTA acceptance and implementation claims remain deferred to later phase receipts.
+  - worker enrollment behavior by design only,
+  - OTA build/dry-run verification only.
+- OTA live acceptance remains deferred until OTA-capable firmware is first installed by USB and then updated over WiFi.

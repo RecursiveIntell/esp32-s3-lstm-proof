@@ -96,7 +96,28 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - Note: RGB LEDs are not driven by the current WiFi worker firmware; power LED on + coordinator PONG receipt is the verification signal.
 - [x] Task 1.5 Coordinator AP and OTA provisioning plan
   - 2026-07-03: Provisioning plan completed: `docs/CLUSTER_AP_OTA_PROVISIONING_PLAN_2026-07-03.md`
-  - Note: design/provisioning plan only; OTA is not implemented in firmware in this phase.
+  - Note: original phase scope was design/provisioning only.
+- [x] Task 1.6 ArduinoOTA firmware path and host helper
+  - 2026-07-03: OTA code implemented for WiFi cluster modes only (`CLUSTER_ENABLE_OTA=1` on AP ping and AP matmul envs).
+  - Deterministic OTA hostnames:
+    - coordinator: `ri-esp-cluster-coord`
+    - worker1: `ri-esp-cluster-worker1`
+    - worker2: `ri-esp-cluster-worker2`
+  - Host helper added: `tools/ota_cluster_wifi.py`.
+  - Expected dry-run examples:
+    - `python3 tools/ota_cluster_wifi.py --role coord --mode matmul --ip 192.168.4.1`
+    - `python3 tools/ota_cluster_wifi.py --role worker1 --mode matmul --ip 192.168.4.2`
+    - `python3 tools/ota_cluster_wifi.py --role worker2 --mode matmul --ip 192.168.4.3`
+  - 2026-07-03: `python3 -m py_compile tools/*.py` — SUCCESS
+  - 2026-07-03: `python3 tools/test_cluster_protocol.py` — SUCCESS (`PASS packet encode/decode/crc`)
+  - 2026-07-03: OTA helper dry-runs for coordinator, worker1, and worker2 matmul IPs — SUCCESS
+  - 2026-07-03: `pio run -e cluster_coord_ap_ping` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_worker1_ap_ping` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_worker2_ap_ping` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_coord_ap_matmul` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_worker1_ap_matmul` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_worker2_ap_matmul` — SUCCESS
+  - No live OTA upload receipt yet. Controller must first USB-flash OTA-capable firmware, then push an update over WiFi before live OTA proof can be marked complete.
 
 ## Phase 2: Sharded matmul proof with synthetic data
 

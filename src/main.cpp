@@ -32,11 +32,15 @@
 #if CLUSTER_WIFI_DEMO
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include <ArduinoOTA.h>
 
 #if __has_include("wifi_secrets.local.h")
 #include "wifi_secrets.local.h"
 #endif
 
+#ifndef CLUSTER_ENABLE_OTA
+#define CLUSTER_ENABLE_OTA 0
+#endif
 #ifndef CLUSTER_WIFI_AP_MODE
 #define CLUSTER_WIFI_AP_MODE 0
 #endif
@@ -48,6 +52,9 @@
 #endif
 #ifndef CLUSTER_WIFI_UDP_PORT
 #define CLUSTER_WIFI_UDP_PORT 42100
+#endif
+#ifndef CLUSTER_OTA_PASSWORD
+#define CLUSTER_OTA_PASSWORD "localfirstai"
 #endif
 #endif
 
@@ -108,6 +115,56 @@ static const IPAddress CLUSTER_AP_BROADCAST(192, 168, 4, 255);
 static void cluster_print_ip(const char *label, IPAddress ip) {
   Serial.printf("%s=%u.%u.%u.%u", label, ip[0], ip[1], ip[2], ip[3]);
 }
+
+static const char *cluster_ota_hostname() {
+#if CLUSTER_ROLE_COORD
+  return "ri-esp-cluster-coord";
+#elif CLUSTER_ROLE_WORKER && CLUSTER_BOARD_ID == 1
+  return "ri-esp-cluster-worker1";
+#elif CLUSTER_ROLE_WORKER && CLUSTER_BOARD_ID == 2
+  return "ri-esp-cluster-worker2";
+#else
+  return "ri-esp-cluster-unknown";
+#endif
+}
+
+static IPAddress cluster_local_ip() {
+#if CLUSTER_WIFI_AP_MODE
+  return WiFi.softAPIP();
+#else
+  return WiFi.localIP();
+#endif
+}
+
+#if CLUSTER_ENABLE_OTA
+static void cluster_setup_ota() {
+  ArduinoOTA.setHostname(cluster_ota_hostname());
+  ArduinoOTA.setPassword(CLUSTER_OTA_PASSWORD);
+  ArduinoOTA.setPort(3232);
+
+  ArduinoOTA.onStart([]() {
+    const char *type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
+    Serial.printf("CLUSTER_OTA_START type=%s\n", type);
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    unsigned int percent = total == 0 ? 0 : (progress * 100U) / total;
+    if (percent > 100U) percent = 100U;
+    Serial.printf("CLUSTER_OTA_PROGRESS percent=%u\n", percent);
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("CLUSTER_OTA_END ok=1");
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("CLUSTER_OTA_ERROR code=%u\n", (unsigned)error);
+  });
+
+  ArduinoOTA.begin();
+  Serial.printf("CLUSTER_OTA_READY board_id=%u hostname=%s ",
+                (unsigned)CLUSTER_BOARD_ID, cluster_ota_hostname());
+  cluster_print_ip("ip", cluster_local_ip());
+  Serial.println(" port=3232");
+}
+#endif
 
 static bool cluster_send_packet(IPAddress ip, uint16_t port, uint8_t msg_type, uint8_t dst_board,
                                 uint32_t seq, const uint8_t *payload = nullptr,
@@ -327,9 +384,16 @@ static void cluster_setup_wifi_demo() {
     Serial.printf("CLUSTER_WIFI_UDP_FAILED board_id=%u port=%u\n", (unsigned)CLUSTER_BOARD_ID,
                   (unsigned)CLUSTER_WIFI_UDP_PORT);
   }
+
+#if CLUSTER_ENABLE_OTA
+  cluster_setup_ota();
+#endif
 }
 
 static void cluster_loop_wifi_demo() {
+#if CLUSTER_ENABLE_OTA
+  ArduinoOTA.handle();
+#endif
   cluster_handle_udp_packet();
 
 #if CLUSTER_ROLE_COORD
