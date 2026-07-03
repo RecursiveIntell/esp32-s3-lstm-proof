@@ -58,9 +58,10 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - worker1: dual-slot, HTTP `/update`, ArduinoOTA, relay update proved with HTTP `200 OK`
   - worker2: dual-slot, HTTP `/update`, ArduinoOTA, relay update proved with HTTP `200 OK`
 - Model/shard boundary:
-  - The completed hardware cluster proof is deterministic int8/int4 sharded matmul, not full distributed TinyStories generation.
+  - The completed hardware cluster proof includes deterministic int8/int4 sharded matmul and a minimal real sharded output-head inference path.
+  - The H256 recurrent pass remains coordinator-local/single-board; workers compute sharded FC vocabulary rows from the coordinator-supplied hidden vector.
+  - This is not full distributed recurrent H256 generation and not TinyStories behavior/performance.
   - The H256 language model remains a single-board optimized proof with measured p22 speed `39.51703333333333 char-token/s`.
-  - Full model weight sharding was deliberately closed as future research because the evidence-backed useful endpoint is local sentinel + single-board H256 language + optional coordinator-managed worker fleet updates.
 
 ## Phase 1: Multi-board transport proof
 
@@ -314,7 +315,27 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - `pio run -e cluster_worker1_ap_matmul` — SUCCESS (`773949 / 1048576` bytes)
   - `pio run -e cluster_worker2_ap_matmul` — SUCCESS (`773945 / 1048576` bytes)
   - `python3 tools/verify_cluster_matmul.py --port /dev/ttyACM0 --timeout 90 --fixture both` — `PASS cluster matmul fixture=1 seq=447 worker1=272 worker2=-408 total=-136; fixture=2 seq=446 worker1=88 worker2=-80 total=8`
+  - `python3 tools/verify_cluster_inference.py --port /dev/ttyACM0 --timeout 120 --min-gathers 2` — `PASS cluster sharded_fc_inference seq=49 prompt_id=1 prompt="missing sensor. action is " global_token=13 global_char=n local_token=13 local_char=n; seq=50 prompt_id=0 prompt="hot room. action is " global_token=2 global_char=c local_token=2 local_char=c`
   - `python3 tools/local_sentinel_policy.py --temp-c 29.4 --humidity 72 --age-s 3` — emitted `ri_esp32_local_sentinel_v1` receipt with `decision=escalate_heat_humidity`, `confidence=0.9`, and suggested LSTM prompt `high heat and humidity. action is `.
+
+## Sharded FC inference proof (2026-07-03)
+
+- Main issue found: workers did not have the full H256 `weights` data partition, and requiring every worker to materialize the full recurrent model was the wrong architecture for this hardware.
+- Best fix implemented: coordinator keeps the full recurrent H256 model and computes the hidden state locally; workers embed only the tiny `fc.weight`/`fc.bias` output head shard data in app firmware and compute vocabulary-row shards from a quantized hidden vector.
+- Secondary transport fix: infer mode now uses PING discovery then sends FC shard requests unicast to known worker IPs (`192.168.4.3`, `192.168.4.2`) instead of relying on larger broadcast UDP payloads.
+- Worker update reliability fix: `tools/relay_worker_update.py` now paces coordinator serial relay writes at 1024-byte chunks with a short delay, preventing late CDC overrun/`serial_read` relay timeouts.
+- Live relay receipts for embedded-FC worker firmware:
+  - worker1: `CLUSTER_RELAY_UPDATE_END board=1 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=91273`
+  - worker2: `CLUSTER_RELAY_UPDATE_END board=2 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=91274`
+- Live sharded inference receipts:
+  - request: `CLUSTER_FC_REQUEST seq=49 prompt_id=1 prompt="missing sensor. action is " local_token=13 local_char=n local_logit=11.557801 hidden_scale=0.007861948 encoded=true`
+  - worker1 shard: `CLUSTER_FC_RESULT src_board=1 seq=49 prompt_id=1 token=13 char=n logit=11.557800 shard=0-16`
+  - worker2 shard: `CLUSTER_FC_RESULT src_board=2 seq=49 prompt_id=1 token=18 char=s logit=5.313602 shard=17-32`
+  - gather: `CLUSTER_FC_GATHER seq=49 ... global_token=13 global_char=n ... local_token=13 local_char=n ... ok=true`
+  - request: `CLUSTER_FC_REQUEST seq=50 prompt_id=0 prompt="hot room. action is " local_token=2 local_char=c local_logit=7.629882 hidden_scale=0.007871374 encoded=true`
+  - worker1 shard: `CLUSTER_FC_RESULT src_board=1 seq=50 prompt_id=0 token=2 char=c logit=7.629882 shard=0-16`
+  - worker2 shard: `CLUSTER_FC_RESULT src_board=2 seq=50 prompt_id=0 token=18 char=s logit=4.837001 shard=17-32`
+  - gather: `CLUSTER_FC_GATHER seq=50 ... global_token=2 global_char=c ... local_token=2 local_char=c ... ok=true`
 
 ## Coordinator serial relay update path
 
@@ -340,9 +361,10 @@ This deployment plan is intentionally targeted at users with minimal local infra
 - [x] Task 3.2 per-board shard flash flow — satisfied for firmware artifacts by coordinator serial relay.
   - Both workers were dual-slot bootstrapped and then updated through coordinator USB -> WiFi HTTP `/update` with HTTP `200 OK`.
   - Data/weight partition OTA is intentionally not claimed; current relay updates app firmware only.
-- [x] Task 3.3 one-token H256 cluster inference check — replaced by the live deterministic int8/int4 sharded matmul proof.
-  - Receipt: `PASS cluster matmul fixture=1 seq=447 worker1=272 worker2=-408 total=-136; fixture=2 seq=446 worker1=88 worker2=-80 total=8`.
-  - This proves coordinator request/gather, worker shard compute, CRC-framed UDP transport, and dual-worker synchronization.
+- [x] Task 3.3 one-token H256 cluster inference check — completed as sharded FC output-head inference.
+  - Architecture: coordinator computes recurrent H256 hidden state locally; worker1 owns vocabulary rows `0-16`, worker2 owns rows `17-32` of the embedded FC output head; coordinator gathers worker logits and checks the global argmax against its local full-FC result.
+  - Receipt: `PASS cluster sharded_fc_inference seq=49 prompt_id=1 prompt="missing sensor. action is " global_token=13 global_char=n local_token=13 local_char=n; seq=50 prompt_id=0 prompt="hot room. action is " global_token=2 global_char=c local_token=2 local_char=c`.
+  - Boundary: this proves distributed output-head shard compute for one-token inference checks. It does not distribute recurrent LSTM state/gates over WiFi.
 - [x] Task 3.4 full H256 utility suite — completed as single-board p22 + sentinel policy, not WiFi-distributed generation.
   - Single-board benchmark: `benchmarks/p22_i4_wih_whh_simd_h256/p22_i4_wih_whh_simd_h256-summary.json`.
   - Mean speed: `39.51703333333333` char-token/s, `25.30333333333333` ms/token.
@@ -375,6 +397,6 @@ This deployment plan is intentionally targeted at users with minimal local infra
 
 ## Final conclusion
 
-- Completed: hardware-verified single-board H256 local-language proof; hardware-verified three-board coordinator-AP cluster; hardware-verified int8/int4 sharded matmul; coordinator-managed worker firmware update relay; local sentinel policy demo.
-- Not claimed: production readiness, full distributed H256 recurrent generation, TinyStories behavior/performance, transformer result, or direct laptop OTA while staying on the normal internet-connected network.
+- Completed: hardware-verified single-board H256 local-language proof; hardware-verified three-board coordinator-AP cluster; hardware-verified int8/int4 sharded matmul; hardware-verified sharded FC output-head inference; coordinator-managed worker firmware update relay; local sentinel policy demo.
+- Not claimed: production readiness, full distributed H256 recurrent state/gate computation, TinyStories behavior/performance, transformer result, or direct laptop OTA while staying on the normal internet-connected network.
 - Operator state after completion: keep coordinator on USB; future worker app firmware updates can be pushed through `tools/relay_worker_update.py` without worker USB cycles.

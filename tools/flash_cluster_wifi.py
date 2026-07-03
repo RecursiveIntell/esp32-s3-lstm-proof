@@ -17,6 +17,11 @@ ROLE_ENVS = {
         "worker1": "cluster_worker1_ap_matmul",
         "worker2": "cluster_worker2_ap_matmul",
     },
+    "infer": {
+        "coord": "cluster_coord_ap_infer",
+        "worker1": "cluster_worker1_ap_infer",
+        "worker2": "cluster_worker2_ap_infer",
+    },
 }
 
 

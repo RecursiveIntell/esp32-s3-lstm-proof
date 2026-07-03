@@ -18,7 +18,10 @@
 #ifndef CLUSTER_WIFI_MATMUL_PROOF
 #define CLUSTER_WIFI_MATMUL_PROOF 0
 #endif
-#define CLUSTER_WIFI_DEMO (CLUSTER_WIFI_PING_ONLY || CLUSTER_WIFI_MATMUL_PROOF)
+#ifndef CLUSTER_WIFI_SHARDED_INFERENCE
+#define CLUSTER_WIFI_SHARDED_INFERENCE 0
+#endif
+#define CLUSTER_WIFI_DEMO (CLUSTER_WIFI_PING_ONLY || CLUSTER_WIFI_MATMUL_PROOF || CLUSTER_WIFI_SHARDED_INFERENCE)
 #ifndef CLUSTER_BOARD_ID
 #define CLUSTER_BOARD_ID 0
 #endif
@@ -27,6 +30,9 @@
 #endif
 #ifndef CLUSTER_ROLE_WORKER
 #define CLUSTER_ROLE_WORKER 0
+#endif
+#if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_SHARDED_INFERENCE
+#include "fc_shard_weights.h"
 #endif
 
 #if CLUSTER_WIFI_DEMO
@@ -89,6 +95,9 @@ static const char *BENCH_SEEDS[SEED_COUNT] = {
   "missing sensor. action is ",
   "the receipt says "
 };
+
+int vocab_idx(char c);
+char idx_vocab(int idx);
 static constexpr int UTILITY_SEED_COUNT = 8;
 static constexpr int UTILITY_MAX_CHARS = 48;
 static const char *UTILITY_SEEDS[UTILITY_SEED_COUNT] = {
@@ -103,6 +112,15 @@ static const char *UTILITY_SEEDS[UTILITY_SEED_COUNT] = {
 };
 
 #if CLUSTER_WIFI_DEMO
+static bool cluster_model_init_for_role(bool coordinator);
+static bool cluster_prepare_fc_request_from_prompt(const char *prompt, uint8_t prompt_id, int8_t *hidden_q8,
+                                                   float *hidden_scale_out, uint8_t *local_token_out,
+                                                   float *local_logit_out);
+static bool cluster_compute_fc_shard(uint8_t worker_board, const int8_t *hidden_q8, float hidden_scale,
+                                     uint8_t *best_token_out, float *best_logit_out,
+                                     uint8_t *shard_start_out, uint8_t *shard_end_out);
+static const char *cluster_prompt_for_id(uint8_t prompt_id);
+
 static WiFiUDP cluster_udp;
 #if CLUSTER_ENABLE_HTTP_UPDATE
 static WebServer cluster_http_update_server(CLUSTER_HTTP_UPDATE_PORT);
@@ -120,6 +138,20 @@ static int32_t cluster_matmul_worker2_dot = 0;
 static bool cluster_matmul_worker1_seen = false;
 static bool cluster_matmul_worker2_seen = false;
 static bool cluster_matmul_gather_printed = false;
+static bool cluster_model_ready = false;
+#if CLUSTER_WIFI_SHARDED_INFERENCE
+static uint32_t cluster_last_fc_ms = 0;
+static uint32_t cluster_fc_seq = 1;
+static uint32_t cluster_fc_active_seq = 0;
+static uint8_t cluster_fc_active_prompt_id = 0;
+static uint8_t cluster_fc_local_token = 0;
+static float cluster_fc_local_logit = 0.0f;
+static uint8_t cluster_fc_worker_token[3] = {0, 0, 0};
+static float cluster_fc_worker_logit[3] = {0.0f, 0.0f, 0.0f};
+static bool cluster_fc_worker_seen[3] = {false, false, false};
+static bool cluster_fc_gather_printed = false;
+static int8_t cluster_fc_hidden_q8[cluster_protocol::CLUSTER_FC_HIDDEN];
+#endif
 #if CLUSTER_ROLE_COORD
 static IPAddress cluster_worker_ips[3];
 static bool cluster_worker_ip_known[3] = {false, false, false};
@@ -198,7 +230,9 @@ static void cluster_setup_http_update() {
 #else
              "unknown",
 #endif
-#if CLUSTER_WIFI_MATMUL_PROOF
+#if CLUSTER_WIFI_SHARDED_INFERENCE
+             "sharded_inference",
+#elif CLUSTER_WIFI_MATMUL_PROOF
              "matmul",
 #else
              "ping",
@@ -491,6 +525,62 @@ static void cluster_handle_matmul_result(const cluster_protocol::ClusterPacketHe
 #endif
 }
 
+
+static void cluster_handle_fc_shard_result(const cluster_protocol::ClusterPacketHeader &header,
+                                           const uint8_t *payload, size_t payload_len) {
+#if CLUSTER_ROLE_COORD && CLUSTER_WIFI_SHARDED_INFERENCE
+  if (header.src_board < 3) {
+    cluster_worker_ips[header.src_board] = cluster_udp.remoteIP();
+    cluster_worker_ip_known[header.src_board] = true;
+  }
+
+  uint8_t prompt_id = 0;
+  uint8_t best_token = 0;
+  float best_logit = 0.0f;
+  uint8_t shard_start = 0;
+  uint8_t shard_end = 0;
+  if (!cluster_protocol::decode_fc_shard_result_payload(payload, payload_len, &prompt_id, &best_token,
+                                                        &best_logit, &shard_start, &shard_end)) {
+    Serial.printf("CLUSTER_FC_DROP reason=bad_result_payload src_board=%u seq=%lu\n",
+                  (unsigned)header.src_board, (unsigned long)header.seq);
+    return;
+  }
+  Serial.printf("CLUSTER_FC_RESULT src_board=%u seq=%lu prompt_id=%u token=%u char=%c logit=%.6f shard=%u-%u\n",
+                (unsigned)header.src_board, (unsigned long)header.seq, (unsigned)prompt_id,
+                (unsigned)best_token, idx_vocab(best_token), (double)best_logit,
+                (unsigned)shard_start, (unsigned)shard_end);
+
+  if (header.seq != cluster_fc_active_seq || prompt_id != cluster_fc_active_prompt_id) return;
+  if (header.src_board == 1 || header.src_board == 2) {
+    cluster_fc_worker_token[header.src_board] = best_token;
+    cluster_fc_worker_logit[header.src_board] = best_logit;
+    cluster_fc_worker_seen[header.src_board] = true;
+  }
+
+  if (cluster_fc_worker_seen[1] && cluster_fc_worker_seen[2] && !cluster_fc_gather_printed) {
+    uint8_t global_token = cluster_fc_worker_logit[1] >= cluster_fc_worker_logit[2]
+                               ? cluster_fc_worker_token[1]
+                               : cluster_fc_worker_token[2];
+    float global_logit = cluster_fc_worker_logit[1] >= cluster_fc_worker_logit[2]
+                             ? cluster_fc_worker_logit[1]
+                             : cluster_fc_worker_logit[2];
+    bool ok = (global_token == cluster_fc_local_token);
+    Serial.printf("CLUSTER_FC_GATHER seq=%lu prompt_id=%u prompt=\"%s\" worker1_token=%u worker1_logit=%.6f worker2_token=%u worker2_logit=%.6f global_token=%u global_char=%c global_logit=%.6f local_token=%u local_char=%c local_logit=%.6f ok=%s\n",
+                  (unsigned long)header.seq, (unsigned)prompt_id, cluster_prompt_for_id(prompt_id),
+                  (unsigned)cluster_fc_worker_token[1], (double)cluster_fc_worker_logit[1],
+                  (unsigned)cluster_fc_worker_token[2], (double)cluster_fc_worker_logit[2],
+                  (unsigned)global_token, idx_vocab(global_token), (double)global_logit,
+                  (unsigned)cluster_fc_local_token, idx_vocab(cluster_fc_local_token),
+                  (double)cluster_fc_local_logit, ok ? "true" : "false");
+    cluster_fc_gather_printed = true;
+  }
+#else
+  (void)header;
+  (void)payload;
+  (void)payload_len;
+#endif
+}
+
 static void cluster_handle_udp_packet() {
   int packet_size = cluster_udp.parsePacket();
   if (packet_size <= 0) return;
@@ -579,6 +669,50 @@ static void cluster_handle_udp_packet() {
     return;
   }
 
+  if (header.msg_type == cluster_protocol::CLUSTER_MSG_FC_SHARD_REQUEST) {
+#if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_SHARDED_INFERENCE
+    if (header.dst_board == CLUSTER_BROADCAST_BOARD || header.dst_board == (uint8_t)CLUSTER_BOARD_ID) {
+      uint8_t prompt_id = 0;
+      float hidden_scale = 1.0f;
+      int8_t hidden_q8[cluster_protocol::CLUSTER_FC_HIDDEN];
+      if (!cluster_protocol::decode_fc_shard_request_payload(payload, payload_len, &prompt_id,
+                                                             &hidden_scale, hidden_q8)) {
+        Serial.printf("CLUSTER_FC_DROP reason=bad_request_payload src_board=%u seq=%lu\n",
+                      (unsigned)header.src_board, (unsigned long)header.seq);
+        return;
+      }
+      uint8_t best_token = 0;
+      float best_logit = 0.0f;
+      uint8_t shard_start = 0;
+      uint8_t shard_end = 0;
+      bool computed = cluster_model_ready && cluster_compute_fc_shard((uint8_t)CLUSTER_BOARD_ID, hidden_q8,
+                                                                      hidden_scale, &best_token,
+                                                                      &best_logit, &shard_start,
+                                                                      &shard_end);
+      uint8_t result_payload[cluster_protocol::CLUSTER_FC_RESULT_PAYLOAD_SIZE];
+      size_t result_payload_len = 0;
+      bool encoded = computed && cluster_protocol::encode_fc_shard_result_payload(
+                                     prompt_id, best_token, best_logit, shard_start, shard_end,
+                                     result_payload, sizeof(result_payload), &result_payload_len);
+      bool ok = encoded && cluster_send_packet(cluster_udp.remoteIP(), cluster_udp.remotePort(),
+                                               cluster_protocol::CLUSTER_MSG_FC_SHARD_RESULT,
+                                               header.src_board, header.seq, result_payload,
+                                               (uint16_t)result_payload_len);
+      Serial.printf("CLUSTER_FC_WORKER board=%u seq=%lu prompt_id=%u token=%u char=%c logit=%.6f shard=%u-%u ok=%s reply=%s rssi=%ld\n",
+                    (unsigned)CLUSTER_BOARD_ID, (unsigned long)header.seq, (unsigned)prompt_id,
+                    (unsigned)best_token, idx_vocab(best_token), (double)best_logit,
+                    (unsigned)shard_start, (unsigned)shard_end,
+                    computed ? "true" : "false", ok ? "sent" : "failed", (long)WiFi.RSSI());
+    }
+#endif
+    return;
+  }
+
+  if (header.msg_type == cluster_protocol::CLUSTER_MSG_FC_SHARD_RESULT) {
+    cluster_handle_fc_shard_result(header, payload, payload_len);
+    return;
+  }
+
   Serial.printf("CLUSTER_WIFI_DROP reason=unexpected_msg type=%u src_board=%u seq=%lu\n",
                 (unsigned)header.msg_type, (unsigned)header.src_board, (unsigned long)header.seq);
 }
@@ -596,7 +730,9 @@ static void cluster_setup_wifi_demo() {
                 "unknown"
 #endif
                 ,
-#if CLUSTER_WIFI_MATMUL_PROOF
+#if CLUSTER_WIFI_SHARDED_INFERENCE
+                "sharded_inference"
+#elif CLUSTER_WIFI_MATMUL_PROOF
                 "matmul"
 #else
                 "ping"
@@ -652,6 +788,11 @@ static void cluster_setup_wifi_demo() {
 #if CLUSTER_ENABLE_HTTP_UPDATE
   cluster_setup_http_update();
 #endif
+#if CLUSTER_WIFI_SHARDED_INFERENCE
+  cluster_model_ready = cluster_model_init_for_role(CLUSTER_ROLE_COORD != 0);
+  Serial.printf("CLUSTER_MODEL_READY board_id=%u ok=%u role=%s\n", (unsigned)CLUSTER_BOARD_ID,
+                cluster_model_ready ? 1 : 0, CLUSTER_ROLE_COORD ? "coord" : "worker");
+#endif
 }
 
 static void cluster_loop_wifi_demo() {
@@ -705,6 +846,55 @@ static void cluster_loop_wifi_demo() {
       Serial.printf("CLUSTER_MATMUL_REQUEST seq=%lu fixture=%u dst=%u sent=%s\n",
                     (unsigned long)seq, (unsigned)fixture_id,
                     (unsigned)dst, sent ? "true" : "false");
+    }
+  }
+#endif
+#if CLUSTER_WIFI_SHARDED_INFERENCE
+  if (now - cluster_last_ping_ms >= 2000) {
+    cluster_last_ping_ms = now;
+    uint32_t ping_seq = cluster_ping_seq++;
+    bool ping_ok = cluster_send_packet(CLUSTER_AP_BROADCAST, CLUSTER_WIFI_UDP_PORT,
+                                       cluster_protocol::CLUSTER_MSG_PING,
+                                       CLUSTER_BROADCAST_BOARD, ping_seq);
+    Serial.printf("CLUSTER_WIFI_PING_BROADCAST seq=%lu dst=%s port=%u sent=%s reason=infer_discovery\n",
+                  (unsigned long)ping_seq, CLUSTER_AP_BROADCAST.toString().c_str(),
+                  (unsigned)CLUSTER_WIFI_UDP_PORT, ping_ok ? "true" : "false");
+  }
+  if (cluster_model_ready && now - cluster_last_fc_ms >= 8000) {
+    cluster_last_fc_ms = now;
+    const uint32_t seq = cluster_fc_seq++;
+    const uint8_t prompt_id = (uint8_t)(seq & 1u);
+    float hidden_scale = 1.0f;
+    uint8_t local_token = 0;
+    float local_logit = 0.0f;
+    bool prepared = cluster_prepare_fc_request_from_prompt(cluster_prompt_for_id(prompt_id), prompt_id,
+                                                           cluster_fc_hidden_q8, &hidden_scale,
+                                                           &local_token, &local_logit);
+    cluster_fc_active_seq = seq;
+    cluster_fc_active_prompt_id = prompt_id;
+    cluster_fc_local_token = local_token;
+    cluster_fc_local_logit = local_logit;
+    cluster_fc_worker_seen[1] = false;
+    cluster_fc_worker_seen[2] = false;
+    cluster_fc_gather_printed = false;
+
+    uint8_t request_payload[cluster_protocol::CLUSTER_FC_REQUEST_PAYLOAD_SIZE];
+    size_t request_payload_len = 0;
+    bool encoded = prepared && cluster_protocol::encode_fc_shard_request_payload(
+                                   prompt_id, hidden_scale, cluster_fc_hidden_q8,
+                                   request_payload, sizeof(request_payload), &request_payload_len);
+    Serial.printf("CLUSTER_FC_REQUEST seq=%lu prompt_id=%u prompt=\"%s\" local_token=%u local_char=%c local_logit=%.6f hidden_scale=%.9f encoded=%s\n",
+                  (unsigned long)seq, (unsigned)prompt_id, cluster_prompt_for_id(prompt_id),
+                  (unsigned)local_token, idx_vocab(local_token), (double)local_logit,
+                  (double)hidden_scale, encoded ? "true" : "false");
+    for (uint8_t dst = 1; dst <= 2; dst++) {
+      IPAddress target = cluster_worker_ip_known[dst] ? cluster_worker_ips[dst] : CLUSTER_AP_BROADCAST;
+      bool sent = encoded && cluster_send_packet(target, CLUSTER_WIFI_UDP_PORT,
+                                                 cluster_protocol::CLUSTER_MSG_FC_SHARD_REQUEST,
+                                                 dst, seq, request_payload,
+                                                 (uint16_t)request_payload_len);
+      Serial.printf("CLUSTER_FC_REQUEST_SEND seq=%lu dst=%u target=%s sent=%s\n",
+                    (unsigned long)seq, (unsigned)dst, target.toString().c_str(), sent ? "true" : "false");
     }
   }
 #endif
@@ -1223,7 +1413,7 @@ void lstm_layer(int layer, const float *input, int input_dim, bool measure) {
   memcpy(st.c[layer], st.next_c, sizeof(float) * HIDDEN);
 }
 
-int model_step(int token_idx, bool measure) {
+void model_step_hidden(int token_idx, bool measure) {
   uint32_t t0 = measure ? micros() : 0;
   Tensor *embed = resolved.embed;
   uint32_t row = (uint32_t)token_idx * HIDDEN;
@@ -1242,7 +1432,10 @@ int model_step(int token_idx, bool measure) {
     lstm_layer(l, st.x, HIDDEN, measure);
     memcpy(st.x, st.h[l], sizeof(float) * HIDDEN);
   }
+}
 
+int model_finish_fc(bool measure, float *best_logit_out = nullptr) {
+  uint32_t t0 = measure ? micros() : 0;
   t0 = measure ? micros() : 0;
   Tensor *fcw = resolved.fcw;
   Tensor *fcb = resolved.fcb;
@@ -1255,12 +1448,123 @@ int model_step(int token_idx, bool measure) {
     st.logits[v] = acc;
     if (acc > best_v) { best_v = acc; best = v; }
   }
+  if (best_logit_out) *best_logit_out = best_v;
   if (measure) {
     ops.fc_us += (uint32_t)(micros() - t0);
     ops.measured_steps++;
   }
   return best;
 }
+
+int model_step(int token_idx, bool measure) {
+  model_step_hidden(token_idx, measure);
+  return model_finish_fc(measure);
+}
+
+#if CLUSTER_WIFI_DEMO
+static const char *cluster_prompt_for_id(uint8_t prompt_id) {
+  return (prompt_id & 1u) ? "missing sensor. action is " : "hot room. action is ";
+}
+
+static bool cluster_model_init_for_role(bool coordinator) {
+  if (coordinator) {
+    core1_start_sem = xSemaphoreCreateBinary();
+    core1_done_sem = xSemaphoreCreateBinary();
+    if (!core1_start_sem || !core1_done_sem) {
+      Serial.println("CLUSTER_MODEL_ERROR phase=semaphore");
+      return false;
+    }
+    xTaskCreatePinnedToCore(core0_worker, "lstm_worker", 16384, nullptr, 2, nullptr, 0);
+    core1_active = true;
+  }
+  if (!coordinator) {
+#if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_SHARDED_INFERENCE
+    if (RI_FC_ROWS != VOCAB_SIZE || RI_FC_COLS != HIDDEN) {
+      Serial.printf("CLUSTER_MODEL_ERROR phase=embedded_fc_shape rows=%lu cols=%lu expected_rows=%u expected_cols=%u\n",
+                    (unsigned long)RI_FC_ROWS, (unsigned long)RI_FC_COLS,
+                    (unsigned)VOCAB_SIZE, (unsigned)HIDDEN);
+      return false;
+    }
+    Serial.printf("CLUSTER_MODEL_WORKER_FC_READY board_id=%u rows=%lu cols=%lu weights_sha256=%s source=embedded_fc_head\n",
+                  (unsigned)CLUSTER_BOARD_ID, (unsigned long)RI_FC_ROWS, (unsigned long)RI_FC_COLS,
+                  RI_FC_WEIGHTS_SHA256);
+    return true;
+#else
+    return false;
+#endif
+  }
+
+  if (!load_model_partition()) { Serial.println("CLUSTER_MODEL_ERROR phase=load_partition"); return false; }
+
+  // Coordinator runs the recurrent pass, so it needs the fast p22 memory layout:
+  // cloned tensors plus int4 recurrent weights and SRAM scratch/state. Workers only
+  // compute their FC vocabulary row shard from a coordinator-supplied hidden vector.
+  // The worker FC head is embedded into the app firmware, so workers do not need a
+  // data/weights partition or full recurrent model materialization.
+  if (!clone_payloads_to_psram()) { Serial.println("CLUSTER_MODEL_ERROR phase=clone_payloads"); return false; }
+  if (!convert_wih_to_int4()) { Serial.println("CLUSTER_MODEL_ERROR phase=int4_convert"); return false; }
+
+  if (!resolve_model()) { Serial.println("CLUSTER_MODEL_ERROR phase=resolve"); return false; }
+  if (resolved.fcw->dims[1] != HIDDEN || resolved.fcw->dims[0] != VOCAB_SIZE) {
+    Serial.printf("CLUSTER_MODEL_ERROR phase=fc_shape rows=%lu cols=%lu expected_rows=%u expected_cols=%u\n",
+                  (unsigned long)resolved.fcw->dims[0], (unsigned long)resolved.fcw->dims[1],
+                  (unsigned)VOCAB_SIZE, (unsigned)HIDDEN);
+    return false;
+  }
+  if (coordinator) {
+    init_activation_lut();
+    alloc_state();
+  }
+  return true;
+}
+
+static bool cluster_compute_fc_shard(uint8_t worker_board, const int8_t *hidden_q8, float hidden_scale,
+                                     uint8_t *best_token_out, float *best_logit_out,
+                                     uint8_t *shard_start_out, uint8_t *shard_end_out) {
+#if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_SHARDED_INFERENCE
+  if (!hidden_q8 || !best_token_out || !best_logit_out || !shard_start_out || !shard_end_out) return false;
+#else
+  if (!resolved.ok || !resolved.fcw || !resolved.fcb || !hidden_q8 || !best_token_out ||
+      !best_logit_out || !shard_start_out || !shard_end_out) return false;
+#endif
+  uint8_t start = 0;
+  uint8_t end = 0;
+  if (!cluster_protocol::fc_shard_range_for_worker(worker_board, &start, &end)) return false;
+  int best = start;
+  float best_v = -1e30f;
+  for (uint8_t v = start; v <= end; v++) {
+#if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_SHARDED_INFERENCE
+    const int8_t *w = (const int8_t *)(RI_FC_WEIGHT_Q8 + ((uint32_t)v * HIDDEN));
+    float acc = RI_FC_BIAS_F32[v];
+    acc += (float)dot_i8_i8_acc((const uint8_t *)w, 0, hidden_q8, HIDDEN) * RI_FC_WEIGHT_SCALE * hidden_scale;
+#else
+    float acc = f32_at(resolved.fcb, v);
+    acc += dot_tensor_q8(resolved.fcw, (uint32_t)v * HIDDEN, hidden_q8, hidden_scale, HIDDEN);
+#endif
+    if (acc > best_v) { best_v = acc; best = v; }
+  }
+  *best_token_out = (uint8_t)best;
+  *best_logit_out = best_v;
+  *shard_start_out = start;
+  *shard_end_out = end;
+  return true;
+}
+
+static bool cluster_prepare_fc_request_from_prompt(const char *prompt, uint8_t prompt_id, int8_t *hidden_q8,
+                                                   float *hidden_scale_out, uint8_t *local_token_out,
+                                                   float *local_logit_out) {
+  (void)prompt_id;
+  if (!cluster_model_ready || !prompt || !hidden_q8 || !hidden_scale_out || !local_token_out || !local_logit_out) return false;
+  reset_state();
+  for (const char *p = prompt; *p; p++) {
+    model_step_hidden(vocab_idx(*p), false);
+  }
+  *hidden_scale_out = quantize_q8(st.x, hidden_q8, HIDDEN);
+  int token = model_finish_fc(false, local_logit_out);
+  *local_token_out = (uint8_t)token;
+  return true;
+}
+#endif
 
 void sort_u32(uint32_t *arr, int n) {
   for (int i = 1; i < n; i++) {

@@ -14,6 +14,8 @@ BROADCAST_VECTOR = 3
 MATMUL_REQUEST = 4
 MATMUL_RESULT = 5
 ERROR = 6
+FC_SHARD_REQUEST = 7
+FC_SHARD_RESULT = 8
 MATMUL_FIXTURE_ID = 1
 MATMUL_FIXTURE_INT8_ID = 1
 MATMUL_FIXTURE_INT4_ID = 2
@@ -297,6 +299,25 @@ def test_matmul_int4_fixture_math() -> None:
     assert vector == matmul_vector()
 
 
+
+def test_fc_shard_payloads() -> None:
+    hidden = [max(-127, min(127, i - 128)) for i in range(256)]
+    scale = 0.00390625
+    payload = struct.pack("<Bf256b", 1, scale, *hidden)
+    packet = encode_packet(FC_SHARD_REQUEST, src_board=0, dst_board=1, seq=21, payload=payload)
+    header, decoded = decode_packet(packet)
+    assert header["msg_type"] == FC_SHARD_REQUEST
+    prompt_id, decoded_scale, *decoded_hidden = struct.unpack("<Bf256b", decoded)
+    assert prompt_id == 1
+    assert abs(decoded_scale - scale) < 1e-9
+    assert decoded_hidden == hidden
+
+    result_payload = struct.pack("<BBfBB", 1, 12, -0.25, 0, 16)
+    packet = encode_packet(FC_SHARD_RESULT, src_board=1, dst_board=0, seq=21, payload=result_payload)
+    header, decoded = decode_packet(packet)
+    assert header["msg_type"] == FC_SHARD_RESULT
+    assert struct.unpack("<BBfBB", decoded) == (1, 12, -0.25, 0, 16)
+
 def main() -> None:
     test_ping_empty_payload()
     test_payload_roundtrip()
@@ -305,6 +326,7 @@ def main() -> None:
     test_truncated_packet()
     test_matmul_fixture_payloads()
     test_matmul_int4_fixture_math()
+    test_fc_shard_payloads()
     print("PASS packet encode/decode/crc")
 
 

@@ -183,10 +183,11 @@ Final hardware state:
 - worker1: ESP32-S3 station, dual-slot OTA app partitions, HTTP `/update`, relay update proven
 - worker2: ESP32-S3 station, dual-slot OTA app partitions, HTTP `/update`, relay update proven
 
-Verified final cluster receipt:
+Verified final cluster receipts:
 
 ```text
 PASS cluster matmul fixture=1 seq=447 worker1=272 worker2=-408 total=-136; fixture=2 seq=446 worker1=88 worker2=-80 total=8
+PASS cluster sharded_fc_inference seq=49 prompt_id=1 prompt="missing sensor. action is " global_token=13 global_char=n local_token=13 local_char=n; seq=50 prompt_id=0 prompt="hot room. action is " global_token=2 global_char=c local_token=2 local_char=c
 ```
 
 What this proves:
@@ -194,16 +195,27 @@ What this proves:
 - coordinator AP mode works without upstream internet
 - UDP packet framing/CRC/gather works across two workers
 - worker1 and worker2 compute deterministic int8 and packed-int4 shard fixtures correctly
+- worker1 and worker2 compute real sharded FC output-head inference rows from a coordinator-supplied H256 hidden vector
 - coordinator serial relay can update workers without future worker USB cycles
+
+Sharded inference architecture:
+
+- coordinator keeps the full recurrent H256 LSTM and computes the hidden state locally
+- worker1 embeds FC vocabulary rows `0-16`
+- worker2 embeds FC vocabulary rows `17-32`
+- workers return their best local token/logit; coordinator gathers and verifies the global argmax against local full-FC output
+- this avoids requiring a full `weights` data partition on workers
 
 Relay update receipts:
 
 ```text
-worker1: CLUSTER_RELAY_UPDATE_END board=1 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=86714
-worker2: CLUSTER_RELAY_UPDATE_END board=2 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=86717
+worker1 matmul baseline: CLUSTER_RELAY_UPDATE_END board=1 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=86714
+worker2 matmul baseline: CLUSTER_RELAY_UPDATE_END board=2 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=86717
+worker1 embedded-FC infer: CLUSTER_RELAY_UPDATE_END board=1 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=91273
+worker2 embedded-FC infer: CLUSTER_RELAY_UPDATE_END board=2 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=91274
 ```
 
-Boundary: this is a hardware-verified sharded matmul / fleet-update proof, not a claim that full recurrent H256 LSTM generation is distributed over WiFi. The useful language path remains the single-board H256 p22 engine plus deterministic local sentinel policy.
+Boundary: this is a hardware-verified sharded matmul / sharded output-head / fleet-update proof, not a claim that recurrent H256 LSTM state/gates are distributed over WiFi. The useful language path remains the single-board H256 p22 engine plus deterministic local sentinel policy.
 
 ## Related repos
 

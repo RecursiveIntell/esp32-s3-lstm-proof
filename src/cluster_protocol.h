@@ -26,6 +26,8 @@ enum ClusterMsgType : uint8_t {
   CLUSTER_MSG_MATMUL_REQUEST = 4,
   CLUSTER_MSG_MATMUL_RESULT = 5,
   CLUSTER_MSG_ERROR = 6,
+  CLUSTER_MSG_FC_SHARD_REQUEST = 7,
+  CLUSTER_MSG_FC_SHARD_RESULT = 8,
 };
 
 struct ClusterPacketHeader {
@@ -103,6 +105,19 @@ static inline void write_i32_le(uint8_t *dst, int32_t v) {
 
 static inline int32_t read_i32_le(const uint8_t *src) {
   return (int32_t)read_u32_le(src);
+}
+
+static inline void write_f32_le(uint8_t *dst, float v) {
+  uint32_t bits;
+  memcpy(&bits, &v, sizeof(bits));
+  write_u32_le(dst, bits);
+}
+
+static inline float read_f32_le(const uint8_t *src) {
+  uint32_t bits = read_u32_le(src);
+  float v;
+  memcpy(&v, &bits, sizeof(v));
+  return v;
 }
 
 static inline void write_header(uint8_t *dst, const ClusterPacketHeader &header) {
@@ -314,6 +329,70 @@ static inline bool decode_matmul_result_payload(const uint8_t *payload, size_t p
   if (payload_len != CLUSTER_MATMUL_RESULT_PAYLOAD_SIZE) return false;
   *fixture_id_out = payload[0];
   *dot_out = read_i32_le(payload + 1);
+  return true;
+}
+
+static constexpr size_t CLUSTER_FC_HIDDEN = 256;
+static constexpr size_t CLUSTER_FC_REQUEST_PAYLOAD_SIZE = 1 + 4 + CLUSTER_FC_HIDDEN;
+static constexpr size_t CLUSTER_FC_RESULT_PAYLOAD_SIZE = 1 + 1 + 4 + 1 + 1;
+
+static inline bool encode_fc_shard_request_payload(uint8_t prompt_id, float hidden_scale,
+                                                   const int8_t *hidden_q8, uint8_t *out,
+                                                   size_t out_capacity, size_t *out_len) {
+  if (out == nullptr || out_len == nullptr || hidden_q8 == nullptr) return false;
+  if (out_capacity < CLUSTER_FC_REQUEST_PAYLOAD_SIZE) return false;
+  out[0] = prompt_id;
+  write_f32_le(out + 1, hidden_scale);
+  memcpy(out + 5, hidden_q8, CLUSTER_FC_HIDDEN);
+  *out_len = CLUSTER_FC_REQUEST_PAYLOAD_SIZE;
+  return true;
+}
+
+static inline bool decode_fc_shard_request_payload(const uint8_t *payload, size_t payload_len,
+                                                   uint8_t *prompt_id_out, float *hidden_scale_out,
+                                                   int8_t *hidden_q8_out) {
+  if (payload == nullptr || prompt_id_out == nullptr || hidden_scale_out == nullptr || hidden_q8_out == nullptr) return false;
+  if (payload_len != CLUSTER_FC_REQUEST_PAYLOAD_SIZE) return false;
+  *prompt_id_out = payload[0];
+  *hidden_scale_out = read_f32_le(payload + 1);
+  memcpy(hidden_q8_out, payload + 5, CLUSTER_FC_HIDDEN);
+  return true;
+}
+
+static inline bool fc_shard_range_for_worker(uint8_t worker_board, uint8_t *start_out, uint8_t *end_out) {
+  if (start_out == nullptr || end_out == nullptr) return false;
+  if (worker_board == 1) { *start_out = 0; *end_out = 16; return true; }
+  if (worker_board == 2) { *start_out = 17; *end_out = 32; return true; }
+  return false;
+}
+
+static inline bool encode_fc_shard_result_payload(uint8_t prompt_id, uint8_t best_token,
+                                                  float best_logit, uint8_t shard_start,
+                                                  uint8_t shard_end, uint8_t *out,
+                                                  size_t out_capacity, size_t *out_len) {
+  if (out == nullptr || out_len == nullptr) return false;
+  if (out_capacity < CLUSTER_FC_RESULT_PAYLOAD_SIZE) return false;
+  out[0] = prompt_id;
+  out[1] = best_token;
+  write_f32_le(out + 2, best_logit);
+  out[6] = shard_start;
+  out[7] = shard_end;
+  *out_len = CLUSTER_FC_RESULT_PAYLOAD_SIZE;
+  return true;
+}
+
+static inline bool decode_fc_shard_result_payload(const uint8_t *payload, size_t payload_len,
+                                                  uint8_t *prompt_id_out, uint8_t *best_token_out,
+                                                  float *best_logit_out, uint8_t *shard_start_out,
+                                                  uint8_t *shard_end_out) {
+  if (payload == nullptr || prompt_id_out == nullptr || best_token_out == nullptr ||
+      best_logit_out == nullptr || shard_start_out == nullptr || shard_end_out == nullptr) return false;
+  if (payload_len != CLUSTER_FC_RESULT_PAYLOAD_SIZE) return false;
+  *prompt_id_out = payload[0];
+  *best_token_out = payload[1];
+  *best_logit_out = read_f32_le(payload + 2);
+  *shard_start_out = payload[6];
+  *shard_end_out = payload[7];
   return true;
 }
 

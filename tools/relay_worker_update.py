@@ -18,6 +18,10 @@ ROLE_ENVS = {
         "worker1": "cluster_worker1_ap_matmul",
         "worker2": "cluster_worker2_ap_matmul",
     },
+    "infer": {
+        "worker1": "cluster_worker1_ap_infer",
+        "worker2": "cluster_worker2_ap_infer",
+    },
 }
 
 
@@ -38,6 +42,7 @@ def wait_for_worker_ip(ser: serial.Serial, board: int, timeout: float) -> None:
     needles = (
         f"CLUSTER_MATMUL_RESULT src_board={board} ",
         f"CLUSTER_WIFI_PONG src_board={board} ",
+        f"CLUSTER_FC_RESULT src_board={board} ",
     )
     while time.monotonic() < deadline:
         raw = ser.readline()
@@ -74,13 +79,18 @@ def send_relay_update(ser: serial.Serial, board: int, firmware: Path, timeout: f
     with firmware.open("rb") as f:
         sent = 0
         while True:
-            chunk = f.read(4096)
+            # Pace at the coordinator's relay buffer size. Bursting larger chunks can
+            # overrun CDC while the coordinator is also forwarding to WiFi, causing a
+            # late serial_read timeout after most of the image has been received.
+            chunk = f.read(1024)
             if not chunk:
                 break
             ser.write(chunk)
+            ser.flush()
             sent += len(chunk)
             if sent % 65536 < len(chunk) or sent == size:
                 print(f"HOST_RELAY_PROGRESS sent={sent} total={size}")
+            time.sleep(0.01)
         ser.flush()
 
     ok = False
