@@ -10,6 +10,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "cluster_protocol.h"
+
 #ifndef CLUSTER_BOARD_ID
 #define CLUSTER_BOARD_ID 0
 #endif

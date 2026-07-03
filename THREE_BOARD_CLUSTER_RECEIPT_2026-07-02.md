@@ -49,7 +49,12 @@ Track the live implementation plan for a 3-board ESP32-S3 tensor-parallel cluste
   - 2026-07-02: `pio run -e cluster_coord` — SUCCESS (`00:00:05.871`), role macros: `CLUSTER_ROLE_COORD=1`, `CLUSTER_BOARD_ID=0`
   - 2026-07-02: `pio run -e cluster_worker1` — SUCCESS (`00:00:08.123`), role macros: `CLUSTER_ROLE_WORKER=1`, `CLUSTER_BOARD_ID=1`
   - 2026-07-02: `pio run -e cluster_worker2` — SUCCESS (`00:00:08.173`), role macros: `CLUSTER_ROLE_WORKER=1`, `CLUSTER_BOARD_ID=2`
-- [ ] Task 1.2 packet framing and CRC format
+- [x] Task 1.2 packet framing and CRC format
+  - 2026-07-03: `python3 tools/test_cluster_protocol.py` — SUCCESS (`PASS packet encode/decode/crc`)
+  - 2026-07-03: `python3 -m py_compile tools/*.py` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_coord` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_worker1` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_worker2` — SUCCESS
 - [ ] Task 1.3 worker echo firmware proof
 - [ ] Task 1.4 two-worker barrier sync proof
 
