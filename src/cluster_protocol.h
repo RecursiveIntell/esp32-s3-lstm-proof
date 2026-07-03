@@ -30,6 +30,20 @@ enum ClusterMsgType : uint8_t {
   CLUSTER_MSG_FC_SHARD_RESULT = 8,
   CLUSTER_MSG_LSTM_GATE_REQUEST = 9,
   CLUSTER_MSG_LSTM_GATE_RESULT = 10,
+  CLUSTER_MSG_BENCH_START = 11,
+  CLUSTER_MSG_BENCH_RESULT = 12,
+  CLUSTER_MSG_BENCH_AGGREGATE_RESULT = 13,
+};
+
+static constexpr size_t CLUSTER_BENCH_RESULT_PAYLOAD_SIZE = 16;
+
+struct ClusterBenchResult {
+  uint8_t prompt_id;
+  uint8_t model_profile_id;
+  uint16_t generated_chars;
+  uint32_t elapsed_ms;
+  uint32_t checksum;
+  float chars_per_sec;
 };
 
 struct ClusterPacketHeader {
@@ -120,6 +134,31 @@ static inline float read_f32_le(const uint8_t *src) {
   float v;
   memcpy(&v, &bits, sizeof(v));
   return v;
+}
+
+static inline bool encode_bench_result_payload(const ClusterBenchResult &result, uint8_t *out,
+                                               size_t out_capacity) {
+  if (out == nullptr || out_capacity < CLUSTER_BENCH_RESULT_PAYLOAD_SIZE) return false;
+  out[0] = result.prompt_id;
+  out[1] = result.model_profile_id;
+  write_u16_le(out + 2, result.generated_chars);
+  write_u32_le(out + 4, result.elapsed_ms);
+  write_u32_le(out + 8, result.checksum);
+  write_f32_le(out + 12, result.chars_per_sec);
+  return true;
+}
+
+static inline bool decode_bench_result_payload(const uint8_t *payload, size_t payload_len,
+                                               ClusterBenchResult *result_out) {
+  if (payload == nullptr || result_out == nullptr) return false;
+  if (payload_len != CLUSTER_BENCH_RESULT_PAYLOAD_SIZE) return false;
+  result_out->prompt_id = payload[0];
+  result_out->model_profile_id = payload[1];
+  result_out->generated_chars = read_u16_le(payload + 2);
+  result_out->elapsed_ms = read_u32_le(payload + 4);
+  result_out->checksum = read_u32_le(payload + 8);
+  result_out->chars_per_sec = read_f32_le(payload + 12);
+  return true;
 }
 
 static inline void write_header(uint8_t *dst, const ClusterPacketHeader &header) {

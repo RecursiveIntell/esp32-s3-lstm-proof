@@ -26,7 +26,10 @@
 #ifndef CLUSTER_WIFI_LSTM_SHARD
 #define CLUSTER_WIFI_LSTM_SHARD 0
 #endif
-#define CLUSTER_WIFI_DEMO (CLUSTER_WIFI_PING_ONLY || CLUSTER_WIFI_MATMUL_PROOF || CLUSTER_WIFI_SHARDED_INFERENCE || CLUSTER_WIFI_LSTM_SHARD)
+#ifndef CLUSTER_WIFI_LOCAL_GENERATOR
+#define CLUSTER_WIFI_LOCAL_GENERATOR 0
+#endif
+#define CLUSTER_WIFI_DEMO (CLUSTER_WIFI_PING_ONLY || CLUSTER_WIFI_MATMUL_PROOF || CLUSTER_WIFI_SHARDED_INFERENCE || CLUSTER_WIFI_LSTM_SHARD || CLUSTER_WIFI_LOCAL_GENERATOR)
 #ifndef CLUSTER_BOARD_ID
 #define CLUSTER_BOARD_ID 0
 #endif
@@ -164,6 +167,8 @@ static const char *UTILITY_SEEDS[UTILITY_SEED_COUNT] = {
 
 #if CLUSTER_WIFI_DEMO
 static bool cluster_model_init_for_role(bool coordinator);
+static bool cluster_model_init_full_local();
+static void cluster_local_generator_tick(uint32_t now);
 static bool cluster_prepare_fc_request_from_prompt(const char *prompt, uint8_t prompt_id, int8_t *hidden_q8,
                                                    float *hidden_scale_out, uint8_t *local_token_out,
                                                    float *local_logit_out);
@@ -178,9 +183,11 @@ static bool cluster_worker_compute_lstm_gate_probe(uint8_t layer, uint16_t row_s
                                                    const int8_t *qh, float h_scale,
                                                    uint16_t *row_start_out, int32_t *values_out,
                                                    uint16_t *count_out);
+#if CLUSTER_WIFI_LSTM_SHARD
 static void cluster_handle_lstm_gate_result(const cluster_protocol::ClusterPacketHeader &header,
                                             const uint8_t *payload, size_t payload_len);
 static void cluster_distributed_generation_tick(uint32_t now);
+#endif
 
 
 static WiFiUDP cluster_udp;
@@ -204,6 +211,10 @@ static bool cluster_matmul_worker1_seen = false;
 static bool cluster_matmul_worker2_seen = false;
 static bool cluster_matmul_gather_printed = false;
 static bool cluster_model_ready = false;
+#if CLUSTER_WIFI_LOCAL_GENERATOR
+static uint32_t cluster_local_bench_last_ms = 0;
+static bool cluster_local_bench_packet_sent = false;
+#endif
 #if CLUSTER_WIFI_LSTM_SHARD
 static uint32_t cluster_lstm_gate_seq = 1;
 static uint32_t cluster_last_lstm_gate_ms = 0;
@@ -325,6 +336,8 @@ static void cluster_setup_http_update() {
 #endif
 #if CLUSTER_WIFI_LSTM_SHARD
              "lstm_shard",
+#elif CLUSTER_WIFI_LOCAL_GENERATOR
+             "local_generator",
 #elif CLUSTER_WIFI_SHARDED_INFERENCE
              "sharded_inference",
 #elif CLUSTER_WIFI_MATMUL_PROOF
@@ -939,7 +952,28 @@ static void cluster_handle_udp_packet() {
   }
 
   if (header.msg_type == cluster_protocol::CLUSTER_MSG_LSTM_GATE_RESULT) {
+#if CLUSTER_WIFI_LSTM_SHARD
     cluster_handle_lstm_gate_result(header, payload, payload_len);
+#else
+    Serial.printf("CLUSTER_WIFI_DROP reason=unexpected_lstm_gate_result src_board=%u seq=%lu mode=not_lstm_shard\n",
+                  (unsigned)header.src_board, (unsigned long)header.seq);
+#endif
+    return;
+  }
+
+  if (header.msg_type == cluster_protocol::CLUSTER_MSG_BENCH_RESULT) {
+#if CLUSTER_ROLE_COORD && CLUSTER_WIFI_LOCAL_GENERATOR
+    cluster_protocol::ClusterBenchResult result;
+    if (!cluster_protocol::decode_bench_result_payload(payload, payload_len, &result)) {
+      Serial.printf("CLUSTER_BENCH_DROP reason=bad_result_payload src_board=%u seq=%lu\n",
+                    (unsigned)header.src_board, (unsigned long)header.seq);
+      return;
+    }
+    Serial.printf("CLUSTER_BENCH_RESULT board=%u prompt_id=%u profile=%s generated_chars=%u elapsed_ms=%lu chars_per_sec=%.4f checksum=0x%08lx\n",
+                  (unsigned)header.src_board, (unsigned)result.prompt_id, RI_MODEL_PROFILE,
+                  (unsigned)result.generated_chars, (unsigned long)result.elapsed_ms,
+                  (double)result.chars_per_sec, (unsigned long)result.checksum);
+#endif
     return;
   }
 
@@ -963,6 +997,8 @@ static void cluster_setup_wifi_demo() {
                 ,
 #if CLUSTER_WIFI_LSTM_SHARD
                 "lstm_shard"
+#elif CLUSTER_WIFI_LOCAL_GENERATOR
+                "local_generator"
 #elif CLUSTER_WIFI_SHARDED_INFERENCE
                 "sharded_inference"
 #elif CLUSTER_WIFI_MATMUL_PROOF
@@ -1021,7 +1057,11 @@ static void cluster_setup_wifi_demo() {
 #if CLUSTER_ENABLE_HTTP_UPDATE
   cluster_setup_http_update();
 #endif
-#if CLUSTER_WIFI_SHARDED_INFERENCE || CLUSTER_WIFI_LSTM_SHARD
+#if CLUSTER_WIFI_LOCAL_GENERATOR
+  cluster_model_ready = cluster_model_init_full_local();
+  Serial.printf("CLUSTER_MODEL_READY board_id=%u ok=%u role=%s mode=local_generator\n", (unsigned)CLUSTER_BOARD_ID,
+                cluster_model_ready ? 1 : 0, CLUSTER_ROLE_COORD ? "coord" : "worker");
+#elif CLUSTER_WIFI_SHARDED_INFERENCE || CLUSTER_WIFI_LSTM_SHARD
   cluster_model_ready = cluster_model_init_for_role(CLUSTER_ROLE_COORD != 0);
   Serial.printf("CLUSTER_MODEL_READY board_id=%u ok=%u role=%s\n", (unsigned)CLUSTER_BOARD_ID,
                 cluster_model_ready ? 1 : 0, CLUSTER_ROLE_COORD ? "coord" : "worker");
@@ -1137,6 +1177,9 @@ static void cluster_loop_wifi_demo() {
 #if CLUSTER_WIFI_LSTM_SHARD
   cluster_distributed_generation_tick(now);
 #endif
+#if CLUSTER_WIFI_LOCAL_GENERATOR
+  cluster_local_generator_tick(now);
+#endif
 #elif CLUSTER_ROLE_WORKER
   uint32_t now = millis();
   if (WiFi.status() != WL_CONNECTED) {
@@ -1151,6 +1194,9 @@ static void cluster_loop_wifi_demo() {
     cluster_print_ip("ip", WiFi.localIP());
     Serial.printf(" rssi=%ld port=%u\n", (long)WiFi.RSSI(), (unsigned)CLUSTER_WIFI_UDP_PORT);
   }
+#if CLUSTER_WIFI_LOCAL_GENERATOR
+  cluster_local_generator_tick(now);
+#endif
 #endif
 
   delay(10);
@@ -1849,6 +1895,27 @@ static bool cluster_model_init_for_role(bool coordinator) {
   return true;
 }
 
+static bool cluster_model_init_full_local() {
+  core1_start_sem = xSemaphoreCreateBinary();
+  core1_done_sem = xSemaphoreCreateBinary();
+  if (!core1_start_sem || !core1_done_sem) {
+    Serial.println("CLUSTER_MODEL_ERROR phase=semaphore mode=local_generator");
+    return false;
+  }
+  xTaskCreatePinnedToCore(core0_worker, "lstm_worker", 16384, nullptr, 2, nullptr, 0);
+  core1_active = true;
+  if (!load_model_partition()) { Serial.println("CLUSTER_MODEL_ERROR phase=load_partition mode=local_generator"); return false; }
+  if (!clone_payloads_to_psram()) { Serial.println("CLUSTER_MODEL_ERROR phase=clone_payloads mode=local_generator"); return false; }
+  if (!convert_wih_to_int4()) { Serial.println("CLUSTER_MODEL_ERROR phase=int4_convert mode=local_generator"); return false; }
+  if (!resolve_model()) { Serial.println("CLUSTER_MODEL_ERROR phase=resolve mode=local_generator"); return false; }
+  init_activation_lut();
+  alloc_state();
+  Serial.printf("CLUSTER_MODEL_LOCAL_GENERATOR_READY board_id=%u profile=%s params=%lu hidden=%u layers=%u weights_sha256=%s\n",
+                (unsigned)CLUSTER_BOARD_ID, RI_MODEL_PROFILE, (unsigned long)RI_MODEL_PARAMS,
+                (unsigned)HIDDEN, (unsigned)LAYERS, WEIGHTS_SHA256);
+  return true;
+}
+
 static bool cluster_compute_fc_shard(uint8_t worker_board, const int8_t *hidden_q8, float hidden_scale,
                                      uint8_t *best_token_out, float *best_logit_out,
                                      uint8_t *shard_start_out, uint8_t *shard_end_out) {
@@ -2315,6 +2382,63 @@ void run_benchmark() {
   Serial.print("\"blockers\":[]");
   Serial.println("}");
 }
+
+#if CLUSTER_WIFI_LOCAL_GENERATOR
+static void cluster_local_generator_tick(uint32_t now) {
+  if (!cluster_model_ready || now < 12000) return;
+  if (cluster_local_bench_last_ms != 0 && now - cluster_local_bench_last_ms < 30000) return;
+  cluster_local_bench_last_ms = now;
+
+  const uint8_t prompt_id = (uint8_t)(CLUSTER_BOARD_ID % SEED_COUNT);
+  const char *seed = BENCH_SEEDS[prompt_id];
+  char output[TOKENS_PER_SEED + 1];
+  uint32_t checksum = 2166136261u;
+
+  reset_state();
+  int token = vocab_idx(seed[0]);
+  for (const char *p = seed; *p; p++) token = model_step(vocab_idx(*p), false);
+
+  uint32_t start_ms = millis();
+  memset(&ops, 0, sizeof(ops));
+  for (int i = 0; i < TOKENS_PER_SEED; i++) {
+    char ch = idx_vocab(token);
+    output[i] = ch;
+    checksum ^= (uint8_t)ch;
+    checksum *= 16777619u;
+    token = model_step(token, true);
+    yield();
+  }
+  output[TOKENS_PER_SEED] = 0;
+  uint32_t elapsed_ms = millis() - start_ms;
+  float chars_per_sec = elapsed_ms ? (1000.0f * (float)TOKENS_PER_SEED / (float)elapsed_ms) : 0.0f;
+
+  cluster_protocol::ClusterBenchResult result;
+  result.prompt_id = prompt_id;
+  result.model_profile_id = 1;
+  result.generated_chars = TOKENS_PER_SEED;
+  result.elapsed_ms = elapsed_ms;
+  result.checksum = checksum;
+  result.chars_per_sec = chars_per_sec;
+
+  Serial.printf("CLUSTER_BENCH_RESULT board=%u prompt_id=%u profile=%s generated_chars=%u elapsed_ms=%lu chars_per_sec=%.4f checksum=0x%08lx output=\"",
+                (unsigned)CLUSTER_BOARD_ID, (unsigned)prompt_id, RI_MODEL_PROFILE,
+                (unsigned)result.generated_chars, (unsigned long)result.elapsed_ms,
+                (double)result.chars_per_sec, (unsigned long)result.checksum);
+  json_escape_print(output);
+  Serial.println("\"");
+
+#if CLUSTER_ROLE_WORKER
+  uint8_t payload[cluster_protocol::CLUSTER_BENCH_RESULT_PAYLOAD_SIZE];
+  bool encoded = cluster_protocol::encode_bench_result_payload(result, payload, sizeof(payload));
+  cluster_local_bench_packet_sent = encoded && cluster_send_packet(
+      CLUSTER_AP_IP, CLUSTER_WIFI_UDP_PORT, cluster_protocol::CLUSTER_MSG_BENCH_RESULT,
+      0, 9000u + (uint32_t)CLUSTER_BOARD_ID, payload, sizeof(payload));
+  Serial.printf("CLUSTER_BENCH_RESULT_SEND board=%u sent=%s target=%s:%u\n",
+                (unsigned)CLUSTER_BOARD_ID, cluster_local_bench_packet_sent ? "true" : "false",
+                CLUSTER_AP_IP.toString().c_str(), (unsigned)CLUSTER_WIFI_UDP_PORT);
+#endif
+}
+#endif
 
 void run_language_prompt_receipt(const char *prompt) {
   char output[UTILITY_MAX_CHARS + 1];

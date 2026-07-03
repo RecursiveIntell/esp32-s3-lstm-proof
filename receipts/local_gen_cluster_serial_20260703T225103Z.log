@@ -1,0 +1,10 @@
+CLUSTER_BENCH_RESULT board=2 prompt_id=2 profile=domain_h256_all_int8 generated_chars=16 elapsed_ms=404 chars_per_sec=39.6040 checksum=0x14b1186e
+CLUSTER_BENCH_RESULT board=0 prompt_id=0 profile=domain_h256_all_int8 generated_chars=16 elapsed_ms=405 chars_per_sec=39.5062 checksum=0x34e72f59 output="check airflow.\nt"
+CLUSTER_BENCH_RESULT board=1 prompt_id=1 profile=domain_h256_all_int8 generated_chars=16 elapsed_ms=404 chars_per_sec=39.6040 checksum=0xc2a5dd4a
+CLUSTER_BENCH_RESULT board=2 prompt_id=2 profile=domain_h256_all_int8 generated_chars=16 elapsed_ms=404 chars_per_sec=39.6040 checksum=0x14b1186e
+CLUSTER_BENCH_RESULT board=0 prompt_id=0 profile=domain_h256_all_int8 generated_chars=16 elapsed_ms=405 chars_per_sec=39.5062 checksum=0x34e72f59 output="check airflow.\nt"
+CLUSTER_BENCH_RESULT board=1 prompt_id=1 profile=domain_h256_all_int8 generated_chars=16 elapsed_ms=405 chars_per_sec=39.5062 checksum=0xc2a5dd4a
+CLUSTER_BENCH_RESULT board=2 prompt_id=2 profile=domain_h256_all_int8 generated_chars=16 elapsed_ms=404 chars_per_sec=39.6040 checksum=0x14b1186e
+CLUSTER_BENCH_RESULT board=0 prompt_id=0 profile=domain_h256_all_int8 generated_chars=16 elapsed_ms=406 chars_per_sec=39.4089 checksum=0x34e72f59 output="check airflow.\nt"
+CLUSTER_BENCH_RESULT board=1 prompt_id=1 profile=domain_h256_all_int8 generated_chars=16 elapsed_ms=405 chars_per_sec=39.5062 checksum=0xc2a5dd4a
+CLUSTER_BENCH_RESULT board=2 prompt_id=2 profile=domain_h256_all_int8 generated_chars=16 elapsed_ms=405 chars_per_sec=39.5062 checksum=0x14b1186e

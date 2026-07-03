@@ -18,6 +18,11 @@ ROLE_ENVS = {
         "worker1": "cluster_worker1_ap_matmul",
         "worker2": "cluster_worker2_ap_matmul",
     },
+    "local_gen": {
+        "coord": "cluster_coord_ap_local_gen",
+        "worker1": "cluster_worker1_ap_local_gen",
+        "worker2": "cluster_worker2_ap_local_gen",
+    },
 }
 
 DEFAULT_ESPOTA = Path.home() / ".platformio/packages/framework-arduinoespressif32/tools/espota.py"

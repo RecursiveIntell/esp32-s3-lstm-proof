@@ -26,6 +26,10 @@ ROLE_ENVS = {
         "worker1": "cluster_worker1_ap_lstm_shard",
         "worker2": "cluster_worker2_ap_lstm_shard",
     },
+    "local_gen": {
+        "worker1": "cluster_worker1_ap_local_gen",
+        "worker2": "cluster_worker2_ap_local_gen",
+    },
 }
 
 

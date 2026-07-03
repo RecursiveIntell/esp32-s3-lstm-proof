@@ -18,6 +18,9 @@ FC_SHARD_REQUEST = 7
 FC_SHARD_RESULT = 8
 LSTM_GATE_REQUEST = 9
 LSTM_GATE_RESULT = 10
+BENCH_START = 11
+BENCH_RESULT = 12
+BENCH_AGGREGATE_RESULT = 13
 MATMUL_FIXTURE_ID = 1
 MATMUL_FIXTURE_INT8_ID = 1
 MATMUL_FIXTURE_INT4_ID = 2
@@ -201,6 +204,41 @@ def encode_lstm_gate_result_payload(layer: int, row_start: int, values: list[int
     return struct.pack("<BHH", layer, row_start, len(values)) + struct.pack("<" + "i" * len(values), *values)
 
 
+def encode_benchmark_result_payload(
+    prompt_id: int,
+    model_profile_id: int,
+    generated_chars: int,
+    elapsed_ms: int,
+    checksum: int,
+    chars_per_sec: float,
+) -> bytes:
+    if not 0 <= prompt_id <= 0xFF:
+        raise ValueError("bad prompt_id")
+    if not 0 <= model_profile_id <= 0xFF:
+        raise ValueError("bad model_profile_id")
+    if not 0 <= generated_chars <= 0xFFFF:
+        raise ValueError("bad generated_chars")
+    if not 0 <= elapsed_ms <= 0xFFFFFFFF:
+        raise ValueError("bad elapsed_ms")
+    if not 0 <= checksum <= 0xFFFFFFFF:
+        raise ValueError("bad checksum")
+    return struct.pack("<BBHII f".replace(" ", ""), prompt_id, model_profile_id, generated_chars, elapsed_ms, checksum, chars_per_sec)
+
+
+def decode_benchmark_result_payload(payload: bytes) -> dict[str, int | float]:
+    if len(payload) != 16:
+        raise ProtocolError("bad benchmark result length")
+    prompt_id, model_profile_id, generated_chars, elapsed_ms, checksum, chars_per_sec = struct.unpack("<BBHIIf", payload)
+    return {
+        "prompt_id": prompt_id,
+        "model_profile_id": model_profile_id,
+        "generated_chars": generated_chars,
+        "elapsed_ms": elapsed_ms,
+        "checksum": checksum,
+        "chars_per_sec": chars_per_sec,
+    }
+
+
 def decode_lstm_gate_result_payload(payload: bytes) -> tuple[int, int, list[int]]:
     if len(payload) < 5:
         raise ProtocolError("bad lstm gate result length")
@@ -353,6 +391,29 @@ def test_fc_shard_payloads() -> None:
     assert header["msg_type"] == FC_SHARD_RESULT
     assert struct.unpack("<BBfBB", decoded) == (1, 12, -0.25, 0, 16)
 
+def test_benchmark_result_payloads() -> None:
+    payload = encode_benchmark_result_payload(
+        prompt_id=3,
+        model_profile_id=2,
+        generated_chars=128,
+        elapsed_ms=3200,
+        checksum=0xA5A55A5A,
+        chars_per_sec=40.0,
+    )
+    packet = encode_packet(BENCH_RESULT, src_board=1, dst_board=0, seq=77, payload=payload)
+    header, decoded = decode_packet(packet)
+    assert header["msg_type"] == BENCH_RESULT
+    result = decode_benchmark_result_payload(decoded)
+    assert result == {
+        "prompt_id": 3,
+        "model_profile_id": 2,
+        "generated_chars": 128,
+        "elapsed_ms": 3200,
+        "checksum": 0xA5A55A5A,
+        "chars_per_sec": 40.0,
+    }
+
+
 def main() -> None:
     test_ping_empty_payload()
     test_payload_roundtrip()
@@ -362,6 +423,7 @@ def main() -> None:
     test_matmul_fixture_payloads()
     test_matmul_int4_fixture_math()
     test_fc_shard_payloads()
+    test_benchmark_result_payloads()
     print("PASS packet encode/decode/crc")
 
 
