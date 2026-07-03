@@ -23,7 +23,7 @@ MATMUL_FIXTURE_INT8_ID = 1
 MATMUL_FIXTURE_INT4_ID = 2
 MATMUL_VECTOR_LEN = 16
 LSTM_HIDDEN = 512
-LSTM_GATE_RESULT_MAX_VALUES = 240
+LSTM_GATE_RESULT_MAX_VALUES = 120
 
 
 class ProtocolError(ValueError):
@@ -198,16 +198,16 @@ def decode_lstm_gate_request_payload(payload: bytes) -> tuple[int, float, float,
 def encode_lstm_gate_result_payload(layer: int, row_start: int, values: list[int]) -> bytes:
     if len(values) > LSTM_GATE_RESULT_MAX_VALUES:
         raise ValueError("too many gate values")
-    return struct.pack("<BHH", layer, row_start, len(values)) + struct.pack("<" + "h" * len(values), *values)
+    return struct.pack("<BHH", layer, row_start, len(values)) + struct.pack("<" + "i" * len(values), *values)
 
 
 def decode_lstm_gate_result_payload(payload: bytes) -> tuple[int, int, list[int]]:
     if len(payload) < 5:
         raise ProtocolError("bad lstm gate result length")
     layer, row_start, count = struct.unpack("<BHH", payload[:5])
-    if count > LSTM_GATE_RESULT_MAX_VALUES or len(payload) != 5 + 2 * count:
+    if count > LSTM_GATE_RESULT_MAX_VALUES or len(payload) != 5 + 4 * count:
         raise ProtocolError("bad lstm gate result length")
-    values = list(struct.unpack("<" + "h" * count, payload[5:])) if count else []
+    values = list(struct.unpack("<" + "i" * count, payload[5:])) if count else []
     return layer, row_start, values
 
 def expect_reject(packet: bytes, expected: str) -> None:
@@ -383,7 +383,7 @@ def test_lstm_gate_payloads() -> None:
     assert got_qx == qx
     assert got_qh == qh
 
-    values = [i - 120 for i in range(LSTM_GATE_RESULT_MAX_VALUES)]
+    values = [(i - 60) * 4096 for i in range(LSTM_GATE_RESULT_MAX_VALUES)]
     result = encode_lstm_gate_result_payload(1, 480, values)
     packet = encode_packet(LSTM_GATE_RESULT, src_board=1, dst_board=0, seq=45, payload=result)
     header, decoded = decode_packet(packet)
