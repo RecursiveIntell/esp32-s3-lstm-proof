@@ -74,6 +74,10 @@ This deployment plan is intentionally targeted at users with minimal local infra
     - `cluster_worker2_ap_ping`: worker board `2`, station mode, UDP PING/PONG on port `42100`
   - Flash helper dry-run: `python3 tools/flash_cluster_wifi.py --role coord|worker1|worker2 --port <serial-port>`
   - No-flash status: hardware flashing intentionally not performed during artifact preparation.
+  - 2026-07-03 coordinator flash: `python3 tools/flash_cluster_wifi.py --role coord --port /dev/ttyACM0 --execute` — SUCCESS.
+  - Coordinator hardware: ESP32-S3 MAC `94:a9:90:d2:41:f4`.
+  - Coordinator boot receipt: `CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100`.
+  - Coordinator UDP receipt: `CLUSTER_WIFI_PING_BROADCAST seq=1 dst=192.168.4.255 port=42100 sent=true`.
 - [ ] Task 1.4 two-worker WiFi barrier sync proof (UDP with fallback notes)
 - [ ] Task 1.5 Coordinator AP and OTA provisioning plan
 
