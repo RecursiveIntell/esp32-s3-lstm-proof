@@ -126,7 +126,7 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - 2026-07-03: `pio run -e cluster_coord_ap_matmul` — SUCCESS
   - 2026-07-03: `pio run -e cluster_worker1_ap_matmul` — SUCCESS
   - 2026-07-03: `pio run -e cluster_worker2_ap_matmul` — SUCCESS
-  - No live OTA upload receipt yet. Controller must first USB-flash OTA-capable firmware, then push an update over WiFi before live OTA proof can be marked complete.
+  - Superseded by final relay receipts: workers were USB-bootstrapped once with dual-slot OTA, then coordinator-relayed HTTP `/update` succeeded for worker1 and worker2 with `HTTP/1.1 200 OK`.
 
 ## Phase 2: Sharded matmul proof with synthetic data
 
@@ -158,7 +158,7 @@ This deployment plan is intentionally targeted at users with minimal local infra
     - `CLUSTER_MATMUL_GATHER seq=... worker1=... worker2=... total=... expected=... ok=...`
   - Host verifier added: `python3 tools/verify_cluster_matmul.py --port <coordinator-serial-port>`.
   - 2026-07-03: `pio run -e cluster_coord_ap_matmul` — SUCCESS
-  - No-flash status: live Phase 2 hardware proof intentionally not performed during artifact preparation; controller must run coordinator serial verification before marking hardware proof complete.
+  - Superseded by final live receipts: coordinator serial verification passed for both int8 and packed-int4 fixtures after all three boards were flashed/relayed.
 - [x] Task 2.4 int4 sharded matmul fixture
   - 2026-07-03: Firmware/protocol artifacts prepared, not flashed.
   - Added fixture `2` for packed signed int4 weights while preserving fixture `1` int8 behavior.
