@@ -279,7 +279,7 @@ worker2 data relay: CLUSTER_RELAY_UPDATE_END board=2 ok=1 status="HTTP/1.1 200 O
 worker2 ready:      CLUSTER_WIFI_PONG src_board=2 seq=217 from=192.168.4.2:42100 rssi=0 model_ready=1
 ```
 
-Boundary: this is a hardware-verified sharded matmul / sharded output-head / fleet-update proof, plus a live two-worker H512 data-OTA shard proof. A recurrent gate-row shard compute verifier is implemented and live-proven on worker2 with `max_abs_err=0`; full two-worker recurrent gate gather is still blocked by current worker1 reachability after the latest coordinator verifier flash. The useful language path remains the single-board H256 p22 / H512 TinyStories engines plus deterministic local sentinel policy.
+Boundary: this is a hardware-verified sharded matmul / sharded output-head / fleet-update proof, plus a live two-worker H512 data-OTA shard proof. A recurrent gate-row shard compute/gather verifier is implemented and live-proven on both workers with `max_abs_err=0` and `CLUSTER_LSTM_GATE_GATHER ... status=PASS`. The useful language path remains the single-board H256 p22 / H512 TinyStories engines plus deterministic local sentinel policy until the gate-shard primitive is wired into every generation time-step.
 
 Full H512 OTA shard plan: `TINYSTORIES_H512_OTA_SHARD_PLAN_2026-07-03.md`.
 Live two-worker data OTA receipt: `TINYSTORIES_H512_DATA_OTA_LIVE_RECEIPT_2026-07-03.md`.
