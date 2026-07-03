@@ -203,6 +203,18 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - boot receipt: `ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=matmul`
   - WiFi/AP receipt: `CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100`
   - OTA receipt: `CLUSTER_OTA_READY board_id=0 hostname=ri-esp-cluster-coord ip=192.168.4.1 port=3232`
+- 2026-07-03 coordinator USB flash to relay-compatible HTTP-update firmware:
+  - command: `python3 tools/flash_cluster_wifi.py --role coord --mode matmul --port /dev/ttyACM0 --execute`
+  - result: SUCCESS
+  - hardware MAC: `94:a9:90:d2:41:f4`
+  - build verification before flash: `python3 tools/test_cluster_protocol.py` PASS; `python3 -m py_compile tools/*.py` PASS; `pio run -e cluster_coord_ap_matmul` SUCCESS.
+  - boot receipt: `ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=matmul`
+  - WiFi/AP receipt: `CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100`
+  - OTA receipt: `CLUSTER_OTA_READY board_id=0 hostname=ri-esp-cluster-coord ip=192.168.4.1 port=3232`
+  - HTTP update receipt: `CLUSTER_HTTP_UPDATE_READY board_id=0 ip=192.168.4.1 port=8080 endpoint=/update`
+  - brownout check after low-TX flash: `BROWNOUT_RST False`.
+  - live fixture 1 verifier: `PASS cluster matmul fixture=1 seq=15 worker1=272 worker2=-408 total=-136`
+  - live fixture 2 verifier: `PASS cluster matmul fixture=2 seq=20 worker1=88 worker2=-80 total=8`
 - 2026-07-03 worker1 USB flash to OTA-enabled matmul firmware:
   - command: `python3 tools/flash_cluster_wifi.py --role worker1 --mode matmul --port /dev/ttyACM1 --execute`
   - result: SUCCESS
