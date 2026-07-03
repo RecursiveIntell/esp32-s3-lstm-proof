@@ -152,6 +152,17 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - No-flash status: live Phase 2 hardware proof intentionally not performed during artifact preparation; controller must run coordinator serial verification before marking hardware proof complete.
 - [ ] Task 2.4 int4 sharded matmul fixture
 
+## OTA installation receipts
+
+- 2026-07-03 worker1 USB flash to OTA-enabled matmul firmware:
+  - command: `python3 tools/flash_cluster_wifi.py --role worker1 --mode matmul --port /dev/ttyACM1 --execute`
+  - result: SUCCESS
+  - hardware MAC: `a4:cb:8f:d9:24:ec`
+  - boot receipt: `ESP32-S3 cluster WiFi demo boot board_id=1 role=worker mode=matmul`
+  - WiFi receipt: `CLUSTER_WIFI_WORKER_READY board_id=1 ip=192.168.4.2 rssi=-41 port=42100`
+  - OTA receipt: `CLUSTER_OTA_READY board_id=1 hostname=ri-esp-cluster-worker1 ip=192.168.4.2 port=3232`
+  - note: coordinator is still running old ping firmware, so worker1 matmul firmware correctly continues to answer PING packets until coordinator is upgraded.
+
 ## Phase 3: Shard the existing H256 LSTM model
 
 - [ ] Task 3.1 model shard exporter
