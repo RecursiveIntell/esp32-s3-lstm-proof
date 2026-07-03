@@ -1,6 +1,8 @@
 # Cluster WiFi Ping Flash Manifest — 2026-07-03
 
-Purpose: exact images and commands for the first WiFi-normal-mode 3-board transport proof. No hardware has been flashed yet.
+Status: historical bootstrap manifest, superseded by later live receipts.
+
+Purpose: exact images and commands for the first WiFi-normal-mode 3-board transport proof. This file is retained as the initial ping-flash manifest only; later commits proved matmul, H256 sharded FC inference, TinyStories H512 single-board generation, and build-ready H512 data-OTA shard plumbing.
 
 ## Runtime shape
 
@@ -176,4 +178,9 @@ This first firmware set proves only WiFi transport readiness:
 - CRC/seq validated PONG replies
 - two workers can run from wall/battery after initial flash
 
-It does not yet prove sharded matmul, H256 cluster inference, TinyStories, or performance scaling.
+Historical boundary for this first ping manifest: by itself it did not prove sharded matmul, H256 cluster inference, TinyStories, or performance scaling. Later receipts supersede that boundary:
+
+- sharded matmul: proven in `THREE_BOARD_CLUSTER_RECEIPT_2026-07-02.md`
+- H256 sharded FC inference: commit `d588f26`
+- TinyStories H512 single-board run: commit `d0fa117`
+- H512 app/data OTA shard path: commit `c82498e`

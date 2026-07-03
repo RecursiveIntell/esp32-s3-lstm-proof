@@ -8,7 +8,8 @@ This document defines the provisioning model for the 3-board ESP32-S3 cluster in
 - Provisioning is split into **first-flash USB bootstrap** and **post-first-flash OTA update flow**.
 - ArduinoOTA support now exists for WiFi cluster firmware modes after the implementation commit.
 - A first USB flash is still required to install OTA-capable firmware before any WiFi update can be pushed.
-- Live OTA upload proof is not claimed until a controller flashes OTA-enabled firmware by USB and records a successful WiFi OTA receipt.
+- Live app OTA/relay upload proof has since been recorded for worker1 and worker2 app firmware via coordinator serial -> worker HTTP `/update`.
+- Data/model OTA plumbing for `/update_weights` is build-verified as of commit `c82498e`; live shard-data relay execution is still a separate hardware receipt.
 
 ## 1) No-infrastructure deployment model
 
