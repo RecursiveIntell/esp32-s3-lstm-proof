@@ -1,6 +1,8 @@
 # Codex / Fable Routing for 3-Board ESP32-S3 Cluster
 
-This file supersedes `docs/plans/claude-code-cluster-routing.md` for implementation routing.
+SUPERSEDED: Josh clarified that Fable should be used through Claude Code, while Codex handles everything else. Use `docs/plans/hybrid-codex-fable-cluster-routing.md` as the active routing document.
+
+This file superseded `docs/plans/claude-code-cluster-routing.md` for an earlier Codex-first routing pass.
 
 Plan being executed:
 - `/home/sikmindz/projects/esp32-s3-lstm-proof/docs/plans/2026-07-02-three-board-esp32s3-cluster-plan.md`
