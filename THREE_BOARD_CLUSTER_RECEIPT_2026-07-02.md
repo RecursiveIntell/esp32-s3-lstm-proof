@@ -94,7 +94,9 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - Worker2 receive: `CLUSTER_WIFI_PONG src_board=2 seq=431 from=192.168.4.3:42100 rssi=0`.
   - Result: coordinator observed both workers replying to the same UDP broadcast sequence in one live window.
   - Note: RGB LEDs are not driven by the current WiFi worker firmware; power LED on + coordinator PONG receipt is the verification signal.
-- [ ] Task 1.5 Coordinator AP and OTA provisioning plan
+- [x] Task 1.5 Coordinator AP and OTA provisioning plan
+  - 2026-07-03: Provisioning plan completed: `docs/CLUSTER_AP_OTA_PROVISIONING_PLAN_2026-07-03.md`
+  - Note: design/provisioning plan only; OTA is not implemented in firmware in this phase.
 
 ## Phase 2: Sharded matmul proof with synthetic data
 
