@@ -150,7 +150,28 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - Host verifier added: `python3 tools/verify_cluster_matmul.py --port <coordinator-serial-port>`.
   - 2026-07-03: `pio run -e cluster_coord_ap_matmul` — SUCCESS
   - No-flash status: live Phase 2 hardware proof intentionally not performed during artifact preparation; controller must run coordinator serial verification before marking hardware proof complete.
-- [ ] Task 2.4 int4 sharded matmul fixture
+- [x] Task 2.4 int4 sharded matmul fixture
+  - 2026-07-03: Firmware/protocol artifacts prepared, not flashed.
+  - Added fixture `2` for packed signed int4 weights while preserving fixture `1` int8 behavior.
+  - Fixture `2` keeps request vector `int8[16]`; worker weights are packed two signed int4 values per byte in firmware/protocol helper code.
+  - Fixture `2` math is computed in code:
+    - `vector[i] = i - 8`
+    - worker1 int4 weights: `clamp_i4((i % 8) - 4)`, expected dot `88`
+    - worker2 int4 weights: `clamp_i4(3 - (i % 8))`, expected dot `-80`
+    - gathered expected total `8`
+  - Coordinator alternates fixture `1` and fixture `2` by matmul sequence.
+  - Receipt formats now include fixture IDs on result and gather lines:
+    - `CLUSTER_MATMUL_RESULT src_board=... seq=... fixture=... dot=... expected=... ok=...`
+    - `CLUSTER_MATMUL_GATHER seq=... fixture=... worker1=... worker2=... total=... expected=... ok=...`
+  - Host verifier supports `--fixture 1`, `--fixture 2`, and `--fixture both` with `both` as the default.
+  - 2026-07-03: `python3 tools/test_cluster_protocol.py` — SUCCESS (`PASS packet encode/decode/crc`)
+  - 2026-07-03: `python3 -m py_compile tools/*.py` — SUCCESS
+  - 2026-07-03: `python3 tools/verify_cluster_matmul.py --help` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_coord_ap_matmul` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_worker1_ap_matmul` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_worker2_ap_matmul` — SUCCESS
+  - Build-only boundary: live int4 hardware proof is pending until coordinator and both workers receive this updated firmware.
+  - Current live hardware proof remains fixture `1` only.
 
 ## Phase 2 live hardware proof
 
@@ -166,6 +187,7 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - coordinator receipt: `CLUSTER_MATMUL_RESULT src_board=2 seq=6 fixture=1 dot=-408 expected=-408 ok=true`
   - coordinator gather: `CLUSTER_MATMUL_GATHER seq=6 worker1=272 worker2=-408 total=-136 expected=-136 ok=true`
   - result: coordinator AP sent deterministic matmul requests to both workers, gathered both shard results, and matched expected total.
+- Fixture boundary: this live proof is fixture `1` int8 only. Live fixture `2` int4 proof is pending until all boards receive the updated alternating-fixture firmware.
 - OTA upload boundary:
   - OTA servers are installed on worker1, worker2, and coordinator firmware after USB flashes.
   - Current laptop network is normal WiFi `192.168.50.181/24`; it cannot route to coordinator AP `192.168.4.x` without joining `RI-ESP-CLUSTER`.

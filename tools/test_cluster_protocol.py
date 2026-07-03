@@ -15,6 +15,8 @@ MATMUL_REQUEST = 4
 MATMUL_RESULT = 5
 ERROR = 6
 MATMUL_FIXTURE_ID = 1
+MATMUL_FIXTURE_INT8_ID = 1
+MATMUL_FIXTURE_INT4_ID = 2
 MATMUL_VECTOR_LEN = 16
 
 
@@ -110,12 +112,59 @@ def matmul_weight(worker: int, i: int) -> int:
     return 0
 
 
-def matmul_expected_dot(worker: int) -> int:
-    return sum(value * matmul_weight(worker, i) for i, value in enumerate(matmul_vector()))
+def clamp_i4(value: int) -> int:
+    return min(7, max(-8, value))
 
 
-def encode_matmul_request_payload() -> bytes:
-    return struct.pack("<B16b", MATMUL_FIXTURE_ID, *matmul_vector())
+def pack_i4_pair(low: int, high: int) -> int:
+    return (low & 0x0F) | ((high & 0x0F) << 4)
+
+
+def unpack_i4_low(packed: int) -> int:
+    value = packed & 0x0F
+    return value - 16 if value >= 8 else value
+
+
+def unpack_i4_high(packed: int) -> int:
+    value = (packed >> 4) & 0x0F
+    return value - 16 if value >= 8 else value
+
+
+def matmul_int4_weight_unpacked(worker: int, i: int) -> int:
+    if worker == 1:
+        return clamp_i4((i % 8) - 4)
+    if worker == 2:
+        return clamp_i4(3 - (i % 8))
+    return 0
+
+
+def matmul_int4_weight_packed_byte(worker: int, byte_index: int) -> int:
+    low_i = byte_index * 2
+    return pack_i4_pair(
+        matmul_int4_weight_unpacked(worker, low_i),
+        matmul_int4_weight_unpacked(worker, low_i + 1),
+    )
+
+
+def matmul_int4_weight(worker: int, i: int) -> int:
+    packed = matmul_int4_weight_packed_byte(worker, i >> 1)
+    return unpack_i4_high(packed) if i & 1 else unpack_i4_low(packed)
+
+
+def fixture_weight(fixture: int, worker: int, i: int) -> int:
+    if fixture == MATMUL_FIXTURE_INT8_ID:
+        return matmul_weight(worker, i)
+    if fixture == MATMUL_FIXTURE_INT4_ID:
+        return matmul_int4_weight(worker, i)
+    return 0
+
+
+def matmul_expected_dot(worker: int, fixture: int = MATMUL_FIXTURE_ID) -> int:
+    return sum(value * fixture_weight(fixture, worker, i) for i, value in enumerate(matmul_vector()))
+
+
+def encode_matmul_request_payload(fixture: int = MATMUL_FIXTURE_ID) -> bytes:
+    return struct.pack("<B16b", fixture, *matmul_vector())
 
 
 def decode_matmul_result_payload(payload: bytes) -> tuple[int, int]:
@@ -191,6 +240,63 @@ def test_matmul_fixture_payloads() -> None:
     assert dot == 272
 
 
+def test_matmul_int4_fixture_math() -> None:
+    assert [matmul_int4_weight(1, i) for i in range(MATMUL_VECTOR_LEN)] == [
+        -4,
+        -3,
+        -2,
+        -1,
+        0,
+        1,
+        2,
+        3,
+        -4,
+        -3,
+        -2,
+        -1,
+        0,
+        1,
+        2,
+        3,
+    ]
+    assert [matmul_int4_weight(2, i) for i in range(MATMUL_VECTOR_LEN)] == [
+        3,
+        2,
+        1,
+        0,
+        -1,
+        -2,
+        -3,
+        -4,
+        3,
+        2,
+        1,
+        0,
+        -1,
+        -2,
+        -3,
+        -4,
+    ]
+    assert [matmul_int4_weight_packed_byte(1, i) for i in range(MATMUL_VECTOR_LEN // 2)] == [
+        pack_i4_pair(-4, -3),
+        pack_i4_pair(-2, -1),
+        pack_i4_pair(0, 1),
+        pack_i4_pair(2, 3),
+        pack_i4_pair(-4, -3),
+        pack_i4_pair(-2, -1),
+        pack_i4_pair(0, 1),
+        pack_i4_pair(2, 3),
+    ]
+    assert matmul_expected_dot(1, MATMUL_FIXTURE_INT4_ID) == 88
+    assert matmul_expected_dot(2, MATMUL_FIXTURE_INT4_ID) == -80
+    assert matmul_expected_dot(1, MATMUL_FIXTURE_INT4_ID) + matmul_expected_dot(2, MATMUL_FIXTURE_INT4_ID) == 8
+
+    request_payload = encode_matmul_request_payload(MATMUL_FIXTURE_INT4_ID)
+    fixture_id, *vector = struct.unpack("<B16b", request_payload)
+    assert fixture_id == MATMUL_FIXTURE_INT4_ID
+    assert vector == matmul_vector()
+
+
 def main() -> None:
     test_ping_empty_payload()
     test_payload_roundtrip()
@@ -198,6 +304,7 @@ def main() -> None:
     test_corrupted_crc()
     test_truncated_packet()
     test_matmul_fixture_payloads()
+    test_matmul_int4_fixture_math()
     print("PASS packet encode/decode/crc")
 
 

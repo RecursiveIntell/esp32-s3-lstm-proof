@@ -101,6 +101,7 @@ static uint32_t cluster_last_ping_ms = 0;
 static uint32_t cluster_last_matmul_ms = 0;
 static uint32_t cluster_last_status_ms = 0;
 static uint32_t cluster_matmul_active_seq = 0;
+static uint8_t cluster_matmul_active_fixture = cluster_protocol::CLUSTER_MATMUL_FIXTURE_ID;
 static int32_t cluster_matmul_worker1_dot = 0;
 static int32_t cluster_matmul_worker2_dot = 0;
 static bool cluster_matmul_worker1_seen = false;
@@ -188,10 +189,10 @@ static bool cluster_send_packet(IPAddress ip, uint16_t port, uint8_t msg_type, u
   return true;
 }
 
-static int32_t cluster_matmul_compute_dot(uint8_t worker_board, const int8_t *vector) {
+static int32_t cluster_matmul_compute_dot(uint8_t fixture_id, uint8_t worker_board, const int8_t *vector) {
   int32_t dot = 0;
   for (size_t i = 0; i < cluster_protocol::CLUSTER_MATMUL_VECTOR_LEN; i++) {
-    dot += (int32_t)vector[i] * (int32_t)cluster_protocol::matmul_fixture_weight(worker_board, i);
+    dot += (int32_t)vector[i] * (int32_t)cluster_protocol::matmul_fixture_weight(fixture_id, worker_board, i);
   }
   return dot;
 }
@@ -207,13 +208,13 @@ static void cluster_handle_matmul_result(const cluster_protocol::ClusterPacketHe
     return;
   }
 
-  const int32_t expected = cluster_protocol::matmul_fixture_expected_dot(header.src_board);
-  const bool result_ok = (fixture_id == cluster_protocol::CLUSTER_MATMUL_FIXTURE_ID && dot == expected);
+  const int32_t expected = cluster_protocol::matmul_fixture_expected_dot(header.src_board, fixture_id);
+  const bool result_ok = cluster_protocol::matmul_fixture_is_supported(fixture_id) && dot == expected;
   Serial.printf("CLUSTER_MATMUL_RESULT src_board=%u seq=%lu fixture=%u dot=%ld expected=%ld ok=%s\n",
                 (unsigned)header.src_board, (unsigned long)header.seq, (unsigned)fixture_id,
                 (long)dot, (long)expected, result_ok ? "true" : "false");
 
-  if (header.seq != cluster_matmul_active_seq) return;
+  if (header.seq != cluster_matmul_active_seq || fixture_id != cluster_matmul_active_fixture) return;
   if (header.src_board == 1) {
     cluster_matmul_worker1_dot = dot;
     cluster_matmul_worker1_seen = true;
@@ -224,10 +225,10 @@ static void cluster_handle_matmul_result(const cluster_protocol::ClusterPacketHe
 
   if (cluster_matmul_worker1_seen && cluster_matmul_worker2_seen && !cluster_matmul_gather_printed) {
     const int32_t total = cluster_matmul_worker1_dot + cluster_matmul_worker2_dot;
-    const int32_t expected_total = cluster_protocol::matmul_fixture_expected_gather();
+    const int32_t expected_total = cluster_protocol::matmul_fixture_expected_gather(fixture_id);
     const bool gather_ok = (total == expected_total);
-    Serial.printf("CLUSTER_MATMUL_GATHER seq=%lu worker1=%ld worker2=%ld total=%ld expected=%ld ok=%s\n",
-                  (unsigned long)header.seq, (long)cluster_matmul_worker1_dot,
+    Serial.printf("CLUSTER_MATMUL_GATHER seq=%lu fixture=%u worker1=%ld worker2=%ld total=%ld expected=%ld ok=%s\n",
+                  (unsigned long)header.seq, (unsigned)fixture_id, (long)cluster_matmul_worker1_dot,
                   (long)cluster_matmul_worker2_dot, (long)total, (long)expected_total,
                   gather_ok ? "true" : "false");
     cluster_matmul_gather_printed = true;
@@ -296,7 +297,7 @@ static void cluster_handle_udp_packet() {
                       (unsigned)header.src_board, (unsigned long)header.seq);
         return;
       }
-      const int32_t dot = cluster_matmul_compute_dot((uint8_t)CLUSTER_BOARD_ID, vector);
+      const int32_t dot = cluster_matmul_compute_dot(fixture_id, (uint8_t)CLUSTER_BOARD_ID, vector);
       uint8_t result_payload[cluster_protocol::CLUSTER_MATMUL_RESULT_PAYLOAD_SIZE];
       size_t result_payload_len = 0;
       bool encoded = cluster_protocol::encode_matmul_result_payload(fixture_id, dot, result_payload,
@@ -306,11 +307,12 @@ static void cluster_handle_udp_packet() {
                                                cluster_protocol::CLUSTER_MSG_MATMUL_RESULT,
                                                header.src_board, header.seq, result_payload,
                                                (uint16_t)result_payload_len);
-      const int32_t expected = cluster_protocol::matmul_fixture_expected_dot((uint8_t)CLUSTER_BOARD_ID);
+      const int32_t expected = cluster_protocol::matmul_fixture_expected_dot((uint8_t)CLUSTER_BOARD_ID,
+                                                                            fixture_id);
       Serial.printf("CLUSTER_MATMUL_WORKER board=%u seq=%lu fixture=%u dot=%ld expected=%ld ok=%s reply=%s rssi=%ld\n",
                     (unsigned)CLUSTER_BOARD_ID, (unsigned long)header.seq, (unsigned)fixture_id,
                     (long)dot, (long)expected,
-                    (fixture_id == cluster_protocol::CLUSTER_MATMUL_FIXTURE_ID && dot == expected) ? "true" : "false",
+                    (cluster_protocol::matmul_fixture_is_supported(fixture_id) && dot == expected) ? "true" : "false",
                     ok ? "sent" : "failed", (long)WiFi.RSSI());
     }
 #endif
@@ -413,13 +415,15 @@ static void cluster_loop_wifi_demo() {
   if (now - cluster_last_matmul_ms >= 3000) {
     cluster_last_matmul_ms = now;
     const uint32_t seq = cluster_matmul_seq++;
+    const uint8_t fixture_id = (seq & 1u) ? cluster_protocol::CLUSTER_MATMUL_FIXTURE_INT8_ID
+                                          : cluster_protocol::CLUSTER_MATMUL_FIXTURE_INT4_ID;
     uint8_t request_payload[cluster_protocol::CLUSTER_MATMUL_REQUEST_PAYLOAD_SIZE];
     size_t request_payload_len = 0;
     bool encoded = cluster_protocol::encode_matmul_request_payload(
-        cluster_protocol::CLUSTER_MATMUL_FIXTURE_ID, request_payload, sizeof(request_payload),
-        &request_payload_len);
+        fixture_id, request_payload, sizeof(request_payload), &request_payload_len);
 
     cluster_matmul_active_seq = seq;
+    cluster_matmul_active_fixture = fixture_id;
     cluster_matmul_worker1_dot = 0;
     cluster_matmul_worker2_dot = 0;
     cluster_matmul_worker1_seen = false;
@@ -431,7 +435,7 @@ static void cluster_loop_wifi_demo() {
                                                  cluster_protocol::CLUSTER_MSG_MATMUL_REQUEST, dst, seq,
                                                  request_payload, (uint16_t)request_payload_len);
       Serial.printf("CLUSTER_MATMUL_REQUEST seq=%lu fixture=%u dst=%u sent=%s\n",
-                    (unsigned long)seq, (unsigned)cluster_protocol::CLUSTER_MATMUL_FIXTURE_ID,
+                    (unsigned long)seq, (unsigned)fixture_id,
                     (unsigned)dst, sent ? "true" : "false");
     }
   }

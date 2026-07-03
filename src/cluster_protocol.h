@@ -12,7 +12,10 @@ static constexpr uint32_t CLUSTER_PACKET_MAGIC = 0x43454952u;
 static constexpr uint8_t CLUSTER_PACKET_VERSION = 1;
 static constexpr size_t CLUSTER_PACKET_HEADER_SIZE = 16;
 static constexpr uint8_t CLUSTER_MATMUL_FIXTURE_ID = 1;
+static constexpr uint8_t CLUSTER_MATMUL_FIXTURE_INT8_ID = 1;
+static constexpr uint8_t CLUSTER_MATMUL_FIXTURE_INT4_ID = 2;
 static constexpr size_t CLUSTER_MATMUL_VECTOR_LEN = 16;
+static constexpr size_t CLUSTER_MATMUL_I4_PACKED_WEIGHT_LEN = CLUSTER_MATMUL_VECTOR_LEN / 2;
 static constexpr size_t CLUSTER_MATMUL_REQUEST_PAYLOAD_SIZE = 1 + CLUSTER_MATMUL_VECTOR_LEN;
 static constexpr size_t CLUSTER_MATMUL_RESULT_PAYLOAD_SIZE = 1 + 4;
 
@@ -211,18 +214,67 @@ static inline int8_t matmul_fixture_weight(uint8_t worker_board, size_t i) {
   return 0;
 }
 
-static inline int32_t matmul_fixture_expected_dot(uint8_t worker_board) {
+static inline int8_t clamp_i4(int value) {
+  if (value < -8) return -8;
+  if (value > 7) return 7;
+  return (int8_t)value;
+}
+
+static inline uint8_t pack_i4_pair(int8_t low, int8_t high) {
+  return (uint8_t)(((uint8_t)low & 0x0Fu) | (((uint8_t)high & 0x0Fu) << 4));
+}
+
+static inline int8_t unpack_i4_low(uint8_t packed) {
+  int8_t value = (int8_t)(packed & 0x0Fu);
+  return value >= 8 ? (int8_t)(value - 16) : value;
+}
+
+static inline int8_t unpack_i4_high(uint8_t packed) {
+  int8_t value = (int8_t)((packed >> 4) & 0x0Fu);
+  return value >= 8 ? (int8_t)(value - 16) : value;
+}
+
+static inline int8_t matmul_fixture_int4_weight_unpacked(uint8_t worker_board, size_t i) {
+  if (worker_board == 1) return clamp_i4((int)(i % 8) - 4);
+  if (worker_board == 2) return clamp_i4(3 - (int)(i % 8));
+  return 0;
+}
+
+static inline uint8_t matmul_fixture_int4_weight_packed_byte(uint8_t worker_board, size_t byte_index) {
+  const size_t low_i = byte_index * 2;
+  const size_t high_i = low_i + 1;
+  return pack_i4_pair(matmul_fixture_int4_weight_unpacked(worker_board, low_i),
+                      matmul_fixture_int4_weight_unpacked(worker_board, high_i));
+}
+
+static inline int8_t matmul_fixture_int4_weight(uint8_t worker_board, size_t i) {
+  const uint8_t packed = matmul_fixture_int4_weight_packed_byte(worker_board, i >> 1);
+  return (i & 1) ? unpack_i4_high(packed) : unpack_i4_low(packed);
+}
+
+static inline int8_t matmul_fixture_weight(uint8_t fixture_id, uint8_t worker_board, size_t i) {
+  if (fixture_id == CLUSTER_MATMUL_FIXTURE_INT8_ID) return matmul_fixture_weight(worker_board, i);
+  if (fixture_id == CLUSTER_MATMUL_FIXTURE_INT4_ID) return matmul_fixture_int4_weight(worker_board, i);
+  return 0;
+}
+
+static inline bool matmul_fixture_is_supported(uint8_t fixture_id) {
+  return fixture_id == CLUSTER_MATMUL_FIXTURE_INT8_ID || fixture_id == CLUSTER_MATMUL_FIXTURE_INT4_ID;
+}
+
+static inline int32_t matmul_fixture_expected_dot(uint8_t worker_board,
+                                                  uint8_t fixture_id = CLUSTER_MATMUL_FIXTURE_ID) {
   int8_t vector[CLUSTER_MATMUL_VECTOR_LEN];
   fill_matmul_fixture_vector(vector);
   int32_t dot = 0;
   for (size_t i = 0; i < CLUSTER_MATMUL_VECTOR_LEN; i++) {
-    dot += (int32_t)vector[i] * (int32_t)matmul_fixture_weight(worker_board, i);
+    dot += (int32_t)vector[i] * (int32_t)matmul_fixture_weight(fixture_id, worker_board, i);
   }
   return dot;
 }
 
-static inline int32_t matmul_fixture_expected_gather() {
-  return matmul_fixture_expected_dot(1) + matmul_fixture_expected_dot(2);
+static inline int32_t matmul_fixture_expected_gather(uint8_t fixture_id = CLUSTER_MATMUL_FIXTURE_ID) {
+  return matmul_fixture_expected_dot(1, fixture_id) + matmul_fixture_expected_dot(2, fixture_id);
 }
 
 static inline bool encode_matmul_request_payload(uint8_t fixture_id, uint8_t *out,
