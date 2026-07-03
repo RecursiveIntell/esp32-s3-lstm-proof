@@ -11,6 +11,10 @@ namespace cluster_protocol {
 static constexpr uint32_t CLUSTER_PACKET_MAGIC = 0x43454952u;
 static constexpr uint8_t CLUSTER_PACKET_VERSION = 1;
 static constexpr size_t CLUSTER_PACKET_HEADER_SIZE = 16;
+static constexpr uint8_t CLUSTER_MATMUL_FIXTURE_ID = 1;
+static constexpr size_t CLUSTER_MATMUL_VECTOR_LEN = 16;
+static constexpr size_t CLUSTER_MATMUL_REQUEST_PAYLOAD_SIZE = 1 + CLUSTER_MATMUL_VECTOR_LEN;
+static constexpr size_t CLUSTER_MATMUL_RESULT_PAYLOAD_SIZE = 1 + 4;
 
 enum ClusterMsgType : uint8_t {
   CLUSTER_MSG_PING = 1,
@@ -88,6 +92,14 @@ static inline uint16_t read_u16_le(const uint8_t *src) {
 static inline uint32_t read_u32_le(const uint8_t *src) {
   return (uint32_t)src[0] | ((uint32_t)src[1] << 8) | ((uint32_t)src[2] << 16) |
          ((uint32_t)src[3] << 24);
+}
+
+static inline void write_i32_le(uint8_t *dst, int32_t v) {
+  write_u32_le(dst, (uint32_t)v);
+}
+
+static inline int32_t read_i32_le(const uint8_t *src) {
+  return (int32_t)read_u32_le(src);
 }
 
 static inline void write_header(uint8_t *dst, const ClusterPacketHeader &header) {
@@ -184,6 +196,73 @@ static inline ClusterDecodeStatus decode_packet(const uint8_t *packet, size_t pa
   *payload_out = payload;
   *payload_len_out = header.payload_len;
   return CLUSTER_DECODE_OK;
+}
+
+static inline void fill_matmul_fixture_vector(int8_t *vector_out) {
+  if (vector_out == nullptr) return;
+  for (size_t i = 0; i < CLUSTER_MATMUL_VECTOR_LEN; i++) {
+    vector_out[i] = (int8_t)((int)i - 8);
+  }
+}
+
+static inline int8_t matmul_fixture_weight(uint8_t worker_board, size_t i) {
+  if (worker_board == 1) return (int8_t)(i + 1);
+  if (worker_board == 2) return (int8_t)(CLUSTER_MATMUL_VECTOR_LEN - i);
+  return 0;
+}
+
+static inline int32_t matmul_fixture_expected_dot(uint8_t worker_board) {
+  int8_t vector[CLUSTER_MATMUL_VECTOR_LEN];
+  fill_matmul_fixture_vector(vector);
+  int32_t dot = 0;
+  for (size_t i = 0; i < CLUSTER_MATMUL_VECTOR_LEN; i++) {
+    dot += (int32_t)vector[i] * (int32_t)matmul_fixture_weight(worker_board, i);
+  }
+  return dot;
+}
+
+static inline int32_t matmul_fixture_expected_gather() {
+  return matmul_fixture_expected_dot(1) + matmul_fixture_expected_dot(2);
+}
+
+static inline bool encode_matmul_request_payload(uint8_t fixture_id, uint8_t *out,
+                                                 size_t out_capacity, size_t *out_len) {
+  if (out == nullptr || out_len == nullptr) return false;
+  if (out_capacity < CLUSTER_MATMUL_REQUEST_PAYLOAD_SIZE) return false;
+  out[0] = fixture_id;
+  int8_t vector[CLUSTER_MATMUL_VECTOR_LEN];
+  fill_matmul_fixture_vector(vector);
+  memcpy(out + 1, vector, CLUSTER_MATMUL_VECTOR_LEN);
+  *out_len = CLUSTER_MATMUL_REQUEST_PAYLOAD_SIZE;
+  return true;
+}
+
+static inline bool decode_matmul_request_payload(const uint8_t *payload, size_t payload_len,
+                                                 uint8_t *fixture_id_out, int8_t *vector_out) {
+  if (payload == nullptr || fixture_id_out == nullptr || vector_out == nullptr) return false;
+  if (payload_len != CLUSTER_MATMUL_REQUEST_PAYLOAD_SIZE) return false;
+  *fixture_id_out = payload[0];
+  memcpy(vector_out, payload + 1, CLUSTER_MATMUL_VECTOR_LEN);
+  return true;
+}
+
+static inline bool encode_matmul_result_payload(uint8_t fixture_id, int32_t dot, uint8_t *out,
+                                                size_t out_capacity, size_t *out_len) {
+  if (out == nullptr || out_len == nullptr) return false;
+  if (out_capacity < CLUSTER_MATMUL_RESULT_PAYLOAD_SIZE) return false;
+  out[0] = fixture_id;
+  write_i32_le(out + 1, dot);
+  *out_len = CLUSTER_MATMUL_RESULT_PAYLOAD_SIZE;
+  return true;
+}
+
+static inline bool decode_matmul_result_payload(const uint8_t *payload, size_t payload_len,
+                                                uint8_t *fixture_id_out, int32_t *dot_out) {
+  if (payload == nullptr || fixture_id_out == nullptr || dot_out == nullptr) return false;
+  if (payload_len != CLUSTER_MATMUL_RESULT_PAYLOAD_SIZE) return false;
+  *fixture_id_out = payload[0];
+  *dot_out = read_i32_le(payload + 1);
+  return true;
 }
 
 }  // namespace cluster_protocol

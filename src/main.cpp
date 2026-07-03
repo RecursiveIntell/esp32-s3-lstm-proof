@@ -15,6 +15,10 @@
 #ifndef CLUSTER_WIFI_PING_ONLY
 #define CLUSTER_WIFI_PING_ONLY 0
 #endif
+#ifndef CLUSTER_WIFI_MATMUL_PROOF
+#define CLUSTER_WIFI_MATMUL_PROOF 0
+#endif
+#define CLUSTER_WIFI_DEMO (CLUSTER_WIFI_PING_ONLY || CLUSTER_WIFI_MATMUL_PROOF)
 #ifndef CLUSTER_BOARD_ID
 #define CLUSTER_BOARD_ID 0
 #endif
@@ -25,7 +29,7 @@
 #define CLUSTER_ROLE_WORKER 0
 #endif
 
-#if CLUSTER_WIFI_PING_ONLY
+#if CLUSTER_WIFI_DEMO
 #include <WiFi.h>
 #include <WiFiUdp.h>
 
@@ -82,11 +86,19 @@ static const char *UTILITY_SEEDS[UTILITY_SEED_COUNT] = {
   "local first means "
 };
 
-#if CLUSTER_WIFI_PING_ONLY
+#if CLUSTER_WIFI_DEMO
 static WiFiUDP cluster_udp;
 static uint32_t cluster_ping_seq = 1;
+static uint32_t cluster_matmul_seq = 1;
 static uint32_t cluster_last_ping_ms = 0;
+static uint32_t cluster_last_matmul_ms = 0;
 static uint32_t cluster_last_status_ms = 0;
+static uint32_t cluster_matmul_active_seq = 0;
+static int32_t cluster_matmul_worker1_dot = 0;
+static int32_t cluster_matmul_worker2_dot = 0;
+static bool cluster_matmul_worker1_seen = false;
+static bool cluster_matmul_worker2_seen = false;
+static bool cluster_matmul_gather_printed = false;
 static constexpr uint8_t CLUSTER_BROADCAST_BOARD = 255;
 static const IPAddress CLUSTER_AP_IP(192, 168, 4, 1);
 static const IPAddress CLUSTER_AP_GATEWAY(192, 168, 4, 1);
@@ -98,11 +110,12 @@ static void cluster_print_ip(const char *label, IPAddress ip) {
 }
 
 static bool cluster_send_packet(IPAddress ip, uint16_t port, uint8_t msg_type, uint8_t dst_board,
-                                uint32_t seq) {
-  uint8_t packet[cluster_protocol::CLUSTER_PACKET_HEADER_SIZE];
+                                uint32_t seq, const uint8_t *payload = nullptr,
+                                uint16_t payload_len = 0) {
+  uint8_t packet[256];
   size_t packet_len = 0;
   if (!cluster_protocol::encode_packet(msg_type, (uint8_t)CLUSTER_BOARD_ID, dst_board, seq,
-                                       nullptr, 0, packet, sizeof(packet), &packet_len)) {
+                                       payload, payload_len, packet, sizeof(packet), &packet_len)) {
     Serial.println("CLUSTER_WIFI_ERROR encode_failed");
     return false;
   }
@@ -116,6 +129,57 @@ static bool cluster_send_packet(IPAddress ip, uint16_t port, uint8_t msg_type, u
     return false;
   }
   return true;
+}
+
+static int32_t cluster_matmul_compute_dot(uint8_t worker_board, const int8_t *vector) {
+  int32_t dot = 0;
+  for (size_t i = 0; i < cluster_protocol::CLUSTER_MATMUL_VECTOR_LEN; i++) {
+    dot += (int32_t)vector[i] * (int32_t)cluster_protocol::matmul_fixture_weight(worker_board, i);
+  }
+  return dot;
+}
+
+static void cluster_handle_matmul_result(const cluster_protocol::ClusterPacketHeader &header,
+                                         const uint8_t *payload, size_t payload_len) {
+#if CLUSTER_ROLE_COORD && CLUSTER_WIFI_MATMUL_PROOF
+  uint8_t fixture_id = 0;
+  int32_t dot = 0;
+  if (!cluster_protocol::decode_matmul_result_payload(payload, payload_len, &fixture_id, &dot)) {
+    Serial.printf("CLUSTER_WIFI_DROP reason=bad_matmul_result_payload src_board=%u seq=%lu\n",
+                  (unsigned)header.src_board, (unsigned long)header.seq);
+    return;
+  }
+
+  const int32_t expected = cluster_protocol::matmul_fixture_expected_dot(header.src_board);
+  const bool result_ok = (fixture_id == cluster_protocol::CLUSTER_MATMUL_FIXTURE_ID && dot == expected);
+  Serial.printf("CLUSTER_MATMUL_RESULT src_board=%u seq=%lu fixture=%u dot=%ld expected=%ld ok=%s\n",
+                (unsigned)header.src_board, (unsigned long)header.seq, (unsigned)fixture_id,
+                (long)dot, (long)expected, result_ok ? "true" : "false");
+
+  if (header.seq != cluster_matmul_active_seq) return;
+  if (header.src_board == 1) {
+    cluster_matmul_worker1_dot = dot;
+    cluster_matmul_worker1_seen = true;
+  } else if (header.src_board == 2) {
+    cluster_matmul_worker2_dot = dot;
+    cluster_matmul_worker2_seen = true;
+  }
+
+  if (cluster_matmul_worker1_seen && cluster_matmul_worker2_seen && !cluster_matmul_gather_printed) {
+    const int32_t total = cluster_matmul_worker1_dot + cluster_matmul_worker2_dot;
+    const int32_t expected_total = cluster_protocol::matmul_fixture_expected_gather();
+    const bool gather_ok = (total == expected_total);
+    Serial.printf("CLUSTER_MATMUL_GATHER seq=%lu worker1=%ld worker2=%ld total=%ld expected=%ld ok=%s\n",
+                  (unsigned long)header.seq, (long)cluster_matmul_worker1_dot,
+                  (long)cluster_matmul_worker2_dot, (long)total, (long)expected_total,
+                  gather_ok ? "true" : "false");
+    cluster_matmul_gather_printed = true;
+  }
+#else
+  (void)header;
+  (void)payload;
+  (void)payload_len;
+#endif
 }
 
 static void cluster_handle_udp_packet() {
@@ -165,14 +229,50 @@ static void cluster_handle_udp_packet() {
     return;
   }
 
+  if (header.msg_type == cluster_protocol::CLUSTER_MSG_MATMUL_REQUEST) {
+#if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_MATMUL_PROOF
+    if (header.dst_board == CLUSTER_BROADCAST_BOARD || header.dst_board == (uint8_t)CLUSTER_BOARD_ID) {
+      int8_t vector[cluster_protocol::CLUSTER_MATMUL_VECTOR_LEN];
+      uint8_t fixture_id = 0;
+      if (!cluster_protocol::decode_matmul_request_payload(payload, payload_len, &fixture_id, vector)) {
+        Serial.printf("CLUSTER_WIFI_DROP reason=bad_matmul_request_payload src_board=%u seq=%lu\n",
+                      (unsigned)header.src_board, (unsigned long)header.seq);
+        return;
+      }
+      const int32_t dot = cluster_matmul_compute_dot((uint8_t)CLUSTER_BOARD_ID, vector);
+      uint8_t result_payload[cluster_protocol::CLUSTER_MATMUL_RESULT_PAYLOAD_SIZE];
+      size_t result_payload_len = 0;
+      bool encoded = cluster_protocol::encode_matmul_result_payload(fixture_id, dot, result_payload,
+                                                                    sizeof(result_payload),
+                                                                    &result_payload_len);
+      bool ok = encoded && cluster_send_packet(cluster_udp.remoteIP(), cluster_udp.remotePort(),
+                                               cluster_protocol::CLUSTER_MSG_MATMUL_RESULT,
+                                               header.src_board, header.seq, result_payload,
+                                               (uint16_t)result_payload_len);
+      const int32_t expected = cluster_protocol::matmul_fixture_expected_dot((uint8_t)CLUSTER_BOARD_ID);
+      Serial.printf("CLUSTER_MATMUL_WORKER board=%u seq=%lu fixture=%u dot=%ld expected=%ld ok=%s reply=%s rssi=%ld\n",
+                    (unsigned)CLUSTER_BOARD_ID, (unsigned long)header.seq, (unsigned)fixture_id,
+                    (long)dot, (long)expected,
+                    (fixture_id == cluster_protocol::CLUSTER_MATMUL_FIXTURE_ID && dot == expected) ? "true" : "false",
+                    ok ? "sent" : "failed", (long)WiFi.RSSI());
+    }
+#endif
+    return;
+  }
+
+  if (header.msg_type == cluster_protocol::CLUSTER_MSG_MATMUL_RESULT) {
+    cluster_handle_matmul_result(header, payload, payload_len);
+    return;
+  }
+
   Serial.printf("CLUSTER_WIFI_DROP reason=unexpected_msg type=%u src_board=%u seq=%lu\n",
                 (unsigned)header.msg_type, (unsigned)header.src_board, (unsigned long)header.seq);
 }
 
-static void cluster_setup_wifi_ping_only() {
+static void cluster_setup_wifi_demo() {
   Serial.begin(115200);
   delay(1500);
-  Serial.printf("\nESP32-S3 cluster WiFi ping-only boot board_id=%u role=%s\n",
+  Serial.printf("\nESP32-S3 cluster WiFi demo boot board_id=%u role=%s mode=%s\n",
                 (unsigned)CLUSTER_BOARD_ID,
 #if CLUSTER_ROLE_COORD
                 "coord"
@@ -180,6 +280,12 @@ static void cluster_setup_wifi_ping_only() {
                 "worker"
 #else
                 "unknown"
+#endif
+                ,
+#if CLUSTER_WIFI_MATMUL_PROOF
+                "matmul"
+#else
+                "ping"
 #endif
   );
   Serial.printf("CLUSTER_WIFI_CONFIG ssid=%s port=%u ap_mode=%u\n",
@@ -223,11 +329,12 @@ static void cluster_setup_wifi_ping_only() {
   }
 }
 
-static void cluster_loop_wifi_ping_only() {
+static void cluster_loop_wifi_demo() {
   cluster_handle_udp_packet();
 
 #if CLUSTER_ROLE_COORD
   uint32_t now = millis();
+#if CLUSTER_WIFI_PING_ONLY
   if (now - cluster_last_ping_ms >= 2000) {
     cluster_last_ping_ms = now;
     uint32_t seq = cluster_ping_seq++;
@@ -237,6 +344,34 @@ static void cluster_loop_wifi_ping_only() {
                   (unsigned long)seq, CLUSTER_AP_BROADCAST.toString().c_str(),
                   (unsigned)CLUSTER_WIFI_UDP_PORT, ok ? "true" : "false");
   }
+#endif
+#if CLUSTER_WIFI_MATMUL_PROOF
+  if (now - cluster_last_matmul_ms >= 3000) {
+    cluster_last_matmul_ms = now;
+    const uint32_t seq = cluster_matmul_seq++;
+    uint8_t request_payload[cluster_protocol::CLUSTER_MATMUL_REQUEST_PAYLOAD_SIZE];
+    size_t request_payload_len = 0;
+    bool encoded = cluster_protocol::encode_matmul_request_payload(
+        cluster_protocol::CLUSTER_MATMUL_FIXTURE_ID, request_payload, sizeof(request_payload),
+        &request_payload_len);
+
+    cluster_matmul_active_seq = seq;
+    cluster_matmul_worker1_dot = 0;
+    cluster_matmul_worker2_dot = 0;
+    cluster_matmul_worker1_seen = false;
+    cluster_matmul_worker2_seen = false;
+    cluster_matmul_gather_printed = false;
+
+    for (uint8_t dst = 1; dst <= 2; dst++) {
+      bool sent = encoded && cluster_send_packet(CLUSTER_AP_BROADCAST, CLUSTER_WIFI_UDP_PORT,
+                                                 cluster_protocol::CLUSTER_MSG_MATMUL_REQUEST, dst, seq,
+                                                 request_payload, (uint16_t)request_payload_len);
+      Serial.printf("CLUSTER_MATMUL_REQUEST seq=%lu fixture=%u dst=%u sent=%s\n",
+                    (unsigned long)seq, (unsigned)cluster_protocol::CLUSTER_MATMUL_FIXTURE_ID,
+                    (unsigned)dst, sent ? "true" : "false");
+    }
+  }
+#endif
 #elif CLUSTER_ROLE_WORKER
   uint32_t now = millis();
   if (WiFi.status() != WL_CONNECTED) {
@@ -969,8 +1104,8 @@ void poll_serial_language_commands() {
 }
 
 void setup() {
-#if CLUSTER_WIFI_PING_ONLY
-  cluster_setup_wifi_ping_only();
+#if CLUSTER_WIFI_DEMO
+  cluster_setup_wifi_demo();
   return;
 #endif
 
@@ -1006,8 +1141,8 @@ void setup() {
 }
 
 void loop() {
-#if CLUSTER_WIFI_PING_ONLY
-  cluster_loop_wifi_ping_only();
+#if CLUSTER_WIFI_DEMO
+  cluster_loop_wifi_demo();
   return;
 #endif
 

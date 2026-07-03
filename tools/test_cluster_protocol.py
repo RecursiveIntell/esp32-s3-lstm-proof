@@ -14,6 +14,8 @@ BROADCAST_VECTOR = 3
 MATMUL_REQUEST = 4
 MATMUL_RESULT = 5
 ERROR = 6
+MATMUL_FIXTURE_ID = 1
+MATMUL_VECTOR_LEN = 16
 
 
 class ProtocolError(ValueError):
@@ -96,6 +98,32 @@ def decode_packet(packet: bytes) -> tuple[dict[str, int], bytes]:
     )
 
 
+def matmul_vector() -> list[int]:
+    return [i - 8 for i in range(MATMUL_VECTOR_LEN)]
+
+
+def matmul_weight(worker: int, i: int) -> int:
+    if worker == 1:
+        return i + 1
+    if worker == 2:
+        return MATMUL_VECTOR_LEN - i
+    return 0
+
+
+def matmul_expected_dot(worker: int) -> int:
+    return sum(value * matmul_weight(worker, i) for i, value in enumerate(matmul_vector()))
+
+
+def encode_matmul_request_payload() -> bytes:
+    return struct.pack("<B16b", MATMUL_FIXTURE_ID, *matmul_vector())
+
+
+def decode_matmul_result_payload(payload: bytes) -> tuple[int, int]:
+    if len(payload) != 5:
+        raise ProtocolError("bad matmul result length")
+    return struct.unpack("<Bi", payload)
+
+
 def expect_reject(packet: bytes, expected: str) -> None:
     try:
         decode_packet(packet)
@@ -146,12 +174,30 @@ def test_truncated_packet() -> None:
     expect_reject(packet[: HEADER_SIZE - 1], "truncated")
 
 
+def test_matmul_fixture_payloads() -> None:
+    assert matmul_expected_dot(1) == 272
+    assert matmul_expected_dot(2) == -408
+    request_payload = encode_matmul_request_payload()
+    packet = encode_packet(MATMUL_REQUEST, src_board=0, dst_board=1, seq=13, payload=request_payload)
+    header, payload = decode_packet(packet)
+    fixture_id, *vector = struct.unpack("<B16b", payload)
+    assert header["msg_type"] == MATMUL_REQUEST
+    assert fixture_id == MATMUL_FIXTURE_ID
+    assert vector == matmul_vector()
+
+    result_payload = struct.pack("<Bi", MATMUL_FIXTURE_ID, matmul_expected_dot(1))
+    fixture_id, dot = decode_matmul_result_payload(result_payload)
+    assert fixture_id == MATMUL_FIXTURE_ID
+    assert dot == 272
+
+
 def main() -> None:
     test_ping_empty_payload()
     test_payload_roundtrip()
     test_bad_magic()
     test_corrupted_crc()
     test_truncated_packet()
+    test_matmul_fixture_payloads()
     print("PASS packet encode/decode/crc")
 
 

@@ -100,9 +100,35 @@ This deployment plan is intentionally targeted at users with minimal local infra
 
 ## Phase 2: Sharded matmul proof with synthetic data
 
-- [ ] Task 2.1 deterministic matmul fixture
-- [ ] Task 2.2 worker matmul command
-- [ ] Task 2.3 coordinator gather for 3 shards
+- [x] Task 2.1 deterministic matmul fixture
+  - 2026-07-03: Firmware fixture artifacts prepared, not flashed.
+  - Payloads:
+    - request: `fixture_id:uint8`, `vector:int8[16]`
+    - result: `fixture_id:uint8`, `dot:int32_le`
+  - Fixture math is computed in code:
+    - `vector[i] = i - 8`
+    - worker1 weights: `i + 1`, expected dot `272`
+    - worker2 weights: `16 - i`, expected dot `-408`
+    - gathered expected total `-136`
+  - Protocol check: `python3 tools/test_cluster_protocol.py` covers packet framing plus matmul fixture payload shape.
+  - 2026-07-03: `python3 tools/test_cluster_protocol.py` — SUCCESS (`PASS packet encode/decode/crc`)
+  - 2026-07-03: `python3 -m py_compile tools/*.py` — SUCCESS
+- [x] Task 2.2 worker matmul command
+  - 2026-07-03: `cluster_worker1_ap_matmul` and `cluster_worker2_ap_matmul` build envs added.
+  - Workers decode `CLUSTER_MSG_MATMUL_REQUEST`, compute deterministic int8 dot shards, and reply with `CLUSTER_MSG_MATMUL_RESULT`.
+  - Worker serial receipt format: `CLUSTER_MATMUL_WORKER board=... seq=... fixture=... dot=... expected=... ok=... reply=...`.
+  - 2026-07-03: `pio run -e cluster_worker1_ap_matmul` — SUCCESS
+  - 2026-07-03: `pio run -e cluster_worker2_ap_matmul` — SUCCESS
+- [x] Task 2.3 coordinator gather for 3 shards
+  - 2026-07-03: `cluster_coord_ap_matmul` build env added.
+  - Coordinator AP broadcasts deterministic per-worker `CLUSTER_MSG_MATMUL_REQUEST` packets and gathers worker1 + worker2 results.
+  - Coordinator receipt formats:
+    - `CLUSTER_MATMUL_REQUEST seq=... fixture=... dst=... sent=...`
+    - `CLUSTER_MATMUL_RESULT src_board=... seq=... fixture=... dot=... expected=... ok=...`
+    - `CLUSTER_MATMUL_GATHER seq=... worker1=... worker2=... total=... expected=... ok=...`
+  - Host verifier added: `python3 tools/verify_cluster_matmul.py --port <coordinator-serial-port>`.
+  - 2026-07-03: `pio run -e cluster_coord_ap_matmul` — SUCCESS
+  - No-flash status: live Phase 2 hardware proof intentionally not performed during artifact preparation; controller must run coordinator serial verification before marking hardware proof complete.
 - [ ] Task 2.4 int4 sharded matmul fixture
 
 ## Phase 3: Shard the existing H256 LSTM model
