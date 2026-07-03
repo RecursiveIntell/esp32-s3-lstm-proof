@@ -21,7 +21,10 @@
 #ifndef CLUSTER_WIFI_SHARDED_INFERENCE
 #define CLUSTER_WIFI_SHARDED_INFERENCE 0
 #endif
-#define CLUSTER_WIFI_DEMO (CLUSTER_WIFI_PING_ONLY || CLUSTER_WIFI_MATMUL_PROOF || CLUSTER_WIFI_SHARDED_INFERENCE)
+#ifndef CLUSTER_WIFI_LSTM_SHARD
+#define CLUSTER_WIFI_LSTM_SHARD 0
+#endif
+#define CLUSTER_WIFI_DEMO (CLUSTER_WIFI_PING_ONLY || CLUSTER_WIFI_MATMUL_PROOF || CLUSTER_WIFI_SHARDED_INFERENCE || CLUSTER_WIFI_LSTM_SHARD)
 #ifndef CLUSTER_BOARD_ID
 #define CLUSTER_BOARD_ID 0
 #endif
@@ -169,6 +172,9 @@ static WiFiUDP cluster_udp;
 #if CLUSTER_ENABLE_HTTP_UPDATE
 static WebServer cluster_http_update_server(CLUSTER_HTTP_UPDATE_PORT);
 static bool cluster_http_update_error = false;
+static bool cluster_http_data_update_error = false;
+static const esp_partition_t *cluster_http_data_partition = nullptr;
+static size_t cluster_http_data_written = 0;
 #endif
 static uint32_t cluster_ping_seq = 1;
 static uint32_t cluster_matmul_seq = 1;
@@ -274,7 +280,9 @@ static void cluster_setup_http_update() {
 #else
              "unknown",
 #endif
-#if CLUSTER_WIFI_SHARDED_INFERENCE
+#if CLUSTER_WIFI_LSTM_SHARD
+             "lstm_shard",
+#elif CLUSTER_WIFI_SHARDED_INFERENCE
              "sharded_inference",
 #elif CLUSTER_WIFI_MATMUL_PROOF
              "matmul",
@@ -333,30 +341,99 @@ static void cluster_setup_http_update() {
         }
       });
 
+  cluster_http_update_server.on(
+      "/update_weights", HTTP_POST,
+      []() {
+        const bool ok = !cluster_http_data_update_error && cluster_http_data_partition &&
+                        cluster_http_data_written > 0;
+        cluster_http_update_server.sendHeader("Connection", "close");
+        cluster_http_update_server.send(ok ? 200 : 500, "text/plain", ok ? "OK\n" : "FAIL\n");
+        Serial.printf("CLUSTER_HTTP_DATA_UPDATE_END ok=%u label=weights bytes=%u\n",
+                      ok ? 1 : 0, (unsigned)cluster_http_data_written);
+      },
+      []() {
+        HTTPUpload &upload = cluster_http_update_server.upload();
+        if (upload.status == UPLOAD_FILE_START) {
+          cluster_http_data_update_error = false;
+          cluster_http_data_written = 0;
+          cluster_http_data_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+                                                                 (esp_partition_subtype_t)0x40,
+                                                                 "weights");
+          if (!cluster_http_data_partition) {
+            cluster_http_data_update_error = true;
+            Serial.println("CLUSTER_HTTP_DATA_UPDATE_ERROR phase=find label=weights");
+            return;
+          }
+          Serial.printf("CLUSTER_HTTP_DATA_UPDATE_START label=weights partition_addr=0x%lx partition_size=%lu filename=%s\n",
+                        (unsigned long)cluster_http_data_partition->address,
+                        (unsigned long)cluster_http_data_partition->size,
+                        upload.filename.c_str());
+          esp_err_t err = esp_partition_erase_range(cluster_http_data_partition, 0,
+                                                    cluster_http_data_partition->size);
+          if (err != ESP_OK) {
+            cluster_http_data_update_error = true;
+            Serial.printf("CLUSTER_HTTP_DATA_UPDATE_ERROR phase=erase code=%d\n", (int)err);
+          }
+        } else if (upload.status == UPLOAD_FILE_WRITE) {
+          if (!cluster_http_data_update_error && cluster_http_data_partition) {
+            if (cluster_http_data_written + upload.currentSize > cluster_http_data_partition->size) {
+              cluster_http_data_update_error = true;
+              Serial.printf("CLUSTER_HTTP_DATA_UPDATE_ERROR phase=size written=%u chunk=%u partition_size=%lu\n",
+                            (unsigned)cluster_http_data_written, (unsigned)upload.currentSize,
+                            (unsigned long)cluster_http_data_partition->size);
+              return;
+            }
+            esp_err_t err = esp_partition_write(cluster_http_data_partition, cluster_http_data_written,
+                                                upload.buf, upload.currentSize);
+            if (err != ESP_OK) {
+              cluster_http_data_update_error = true;
+              Serial.printf("CLUSTER_HTTP_DATA_UPDATE_ERROR phase=write offset=%u size=%u code=%d\n",
+                            (unsigned)cluster_http_data_written, (unsigned)upload.currentSize, (int)err);
+              return;
+            }
+            cluster_http_data_written += upload.currentSize;
+            if ((cluster_http_data_written & 0xFFFFu) < upload.currentSize) {
+              Serial.printf("CLUSTER_HTTP_DATA_UPDATE_PROGRESS label=weights written=%u\n",
+                            (unsigned)cluster_http_data_written);
+            }
+          }
+        } else if (upload.status == UPLOAD_FILE_END) {
+          if (!cluster_http_data_update_error) {
+            Serial.printf("CLUSTER_HTTP_DATA_UPDATE_STAGED label=weights bytes=%u\n",
+                          (unsigned)cluster_http_data_written);
+          }
+        } else if (upload.status == UPLOAD_FILE_ABORTED) {
+          cluster_http_data_update_error = true;
+          Serial.println("CLUSTER_HTTP_DATA_UPDATE_ERROR phase=aborted");
+        }
+      });
+
   cluster_http_update_server.begin();
   Serial.printf("CLUSTER_HTTP_UPDATE_READY board_id=%u ", (unsigned)CLUSTER_BOARD_ID);
   cluster_print_ip("ip", cluster_local_ip());
-  Serial.printf(" port=%u endpoint=/update\n", (unsigned)CLUSTER_HTTP_UPDATE_PORT);
+  Serial.printf(" port=%u endpoint=/update data_endpoint=/update_weights\n", (unsigned)CLUSTER_HTTP_UPDATE_PORT);
 }
 #endif
 
 #if CLUSTER_ROLE_COORD && CLUSTER_ENABLE_HTTP_UPDATE
-static bool cluster_parse_relay_update_command(const String &line, uint8_t *board_out, uint32_t *size_out) {
-  if (board_out == nullptr || size_out == nullptr) return false;
+static bool cluster_parse_relay_update_command(const String &line, uint8_t *board_out, uint32_t *size_out, bool *weights_out) {
+  if (board_out == nullptr || size_out == nullptr || weights_out == nullptr) return false;
   if (!line.startsWith("CLUSTER_RELAY_UPDATE ")) return false;
 
   int board = -1;
   unsigned long parsed_size = 0;
-  int parsed = sscanf(line.c_str(), "CLUSTER_RELAY_UPDATE board=%d size=%lu", &board, &parsed_size);
-  if (parsed != 2) return false;
+  char target[24] = "app";
+  int parsed = sscanf(line.c_str(), "CLUSTER_RELAY_UPDATE board=%d size=%lu target=%23s", &board, &parsed_size, target);
+  if (parsed < 2) return false;
   if (board < 1 || board > 2 || parsed_size == 0) return false;
 
   *board_out = (uint8_t)board;
   *size_out = (uint32_t)parsed_size;
+  *weights_out = (strcmp(target, "weights") == 0 || strcmp(target, "data") == 0);
   return true;
 }
 
-static void cluster_relay_worker_update(uint8_t board, uint32_t firmware_size) {
+static void cluster_relay_worker_update(uint8_t board, uint32_t firmware_size, bool weights_target) {
   if (board >= 3 || !cluster_worker_ip_known[board]) {
     Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=target board=%u reason=worker_ip_unknown\n", (unsigned)board);
     return;
@@ -366,15 +443,17 @@ static void cluster_relay_worker_update(uint8_t board, uint32_t firmware_size) {
   WiFiClient client;
   constexpr uint16_t target_port = CLUSTER_HTTP_UPDATE_PORT;
   const char *boundary = "----RIESP32S3RelayBoundary";
+  const char *field_name = weights_target ? "weights" : "update";
+  const char *file_name = weights_target ? "weights.bin" : "firmware.bin";
   String prefix = String("--") + boundary +
-                  "\r\nContent-Disposition: form-data; name=\"update\"; filename=\"firmware.bin\"\r\n" +
+                  "\r\nContent-Disposition: form-data; name=\"" + field_name + "\"; filename=\"" + file_name + "\"\r\n" +
                   "Content-Type: application/octet-stream\r\n\r\n";
   String suffix = String("\r\n--") + boundary + "--\r\n";
   const uint32_t content_length = (uint32_t)prefix.length() + firmware_size + (uint32_t)suffix.length();
 
-  Serial.printf("CLUSTER_RELAY_UPDATE_START board=%u ip=%s port=%u bytes=%lu\n",
+  Serial.printf("CLUSTER_RELAY_UPDATE_START board=%u ip=%s port=%u bytes=%lu target=%s\n",
                 (unsigned)board, target_ip.toString().c_str(), (unsigned)target_port,
-                (unsigned long)firmware_size);
+                (unsigned long)firmware_size, weights_target ? "weights" : "app");
 
   if (!client.connect(target_ip, target_port)) {
     Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=connect board=%u ip=%s\n",
@@ -382,7 +461,7 @@ static void cluster_relay_worker_update(uint8_t board, uint32_t firmware_size) {
     return;
   }
   client.setTimeout(15000);
-  client.printf("POST /update HTTP/1.1\r\n");
+  client.printf(weights_target ? "POST /update_weights HTTP/1.1\r\n" : "POST /update HTTP/1.1\r\n");
   client.printf("Host: %s:%u\r\n", target_ip.toString().c_str(), (unsigned)target_port);
   client.printf("Content-Type: multipart/form-data; boundary=%s\r\n", boundary);
   client.printf("Content-Length: %lu\r\n", (unsigned long)content_length);
@@ -481,12 +560,13 @@ static void cluster_handle_serial_relay() {
 
   uint8_t board = 0;
   uint32_t firmware_size = 0;
-  if (!cluster_parse_relay_update_command(line, &board, &firmware_size)) {
+  bool weights_target = false;
+  if (!cluster_parse_relay_update_command(line, &board, &firmware_size, &weights_target)) {
     Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=parse line=%s\n", line.c_str());
     return;
   }
   Serial.setTimeout(10000);
-  cluster_relay_worker_update(board, firmware_size);
+  cluster_relay_worker_update(board, firmware_size, weights_target);
   Serial.setTimeout(1000);
 }
 #endif
@@ -494,7 +574,7 @@ static void cluster_handle_serial_relay() {
 static bool cluster_send_packet(IPAddress ip, uint16_t port, uint8_t msg_type, uint8_t dst_board,
                                 uint32_t seq, const uint8_t *payload = nullptr,
                                 uint16_t payload_len = 0) {
-  uint8_t packet[640];
+  uint8_t packet[1200];
   size_t packet_len = 0;
   if (!cluster_protocol::encode_packet(msg_type, (uint8_t)CLUSTER_BOARD_ID, dst_board, seq,
                                        payload, payload_len, packet, sizeof(packet), &packet_len)) {
@@ -628,14 +708,14 @@ static void cluster_handle_fc_shard_result(const cluster_protocol::ClusterPacket
 static void cluster_handle_udp_packet() {
   int packet_size = cluster_udp.parsePacket();
   if (packet_size <= 0) return;
-  if (packet_size > 640) {
+  if (packet_size > 1200) {
     Serial.printf("CLUSTER_WIFI_DROP reason=too_large bytes=%d from=%s:%u\n",
                   packet_size, cluster_udp.remoteIP().toString().c_str(), cluster_udp.remotePort());
     while (cluster_udp.available() > 0) cluster_udp.read();
     return;
   }
 
-  uint8_t packet[640];
+  uint8_t packet[1200];
   int read_len = cluster_udp.read(packet, sizeof(packet));
   cluster_protocol::ClusterPacketHeader header;
   const uint8_t *payload = nullptr;
@@ -774,7 +854,9 @@ static void cluster_setup_wifi_demo() {
                 "unknown"
 #endif
                 ,
-#if CLUSTER_WIFI_SHARDED_INFERENCE
+#if CLUSTER_WIFI_LSTM_SHARD
+                "lstm_shard"
+#elif CLUSTER_WIFI_SHARDED_INFERENCE
                 "sharded_inference"
 #elif CLUSTER_WIFI_MATMUL_PROOF
                 "matmul"
@@ -832,7 +914,7 @@ static void cluster_setup_wifi_demo() {
 #if CLUSTER_ENABLE_HTTP_UPDATE
   cluster_setup_http_update();
 #endif
-#if CLUSTER_WIFI_SHARDED_INFERENCE
+#if CLUSTER_WIFI_SHARDED_INFERENCE || CLUSTER_WIFI_LSTM_SHARD
   cluster_model_ready = cluster_model_init_for_role(CLUSTER_ROLE_COORD != 0);
   Serial.printf("CLUSTER_MODEL_READY board_id=%u ok=%u role=%s\n", (unsigned)CLUSTER_BOARD_ID,
                 cluster_model_ready ? 1 : 0, CLUSTER_ROLE_COORD ? "coord" : "worker");
@@ -1033,6 +1115,58 @@ static Core1Params c1p;
 static uint16_t rd_u16(const uint8_t *&p) { uint16_t v; memcpy(&v, p, 2); p += 2; return v; }
 static uint32_t rd_u32(const uint8_t *&p) { uint32_t v; memcpy(&v, p, 4); p += 4; return v; }
 static float rd_f32(const uint8_t *&p) { float v; memcpy(&v, p, 4); p += 4; return v; }
+
+
+#if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_LSTM_SHARD
+static spi_flash_mmap_handle_t cluster_lstm_shard_mmap = 0;
+static const uint8_t *cluster_lstm_shard_base = nullptr;
+static size_t cluster_lstm_shard_len = 0;
+static constexpr uint32_t RIWS_MAGIC = 0x53574952;
+
+static bool load_lstm_shard_partition() {
+  const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+                                                         (esp_partition_subtype_t)0x40,
+                                                         "weights");
+  if (!part) {
+    Serial.println("CLUSTER_MODEL_ERROR phase=shard_partition_find label=weights");
+    return false;
+  }
+  const void *mapped = nullptr;
+  esp_err_t err = esp_partition_mmap(part, 0, part->size, SPI_FLASH_MMAP_DATA, &mapped,
+                                     &cluster_lstm_shard_mmap);
+  if (err != ESP_OK) {
+    Serial.printf("CLUSTER_MODEL_ERROR phase=shard_mmap code=%d\n", (int)err);
+    return false;
+  }
+  cluster_lstm_shard_base = (const uint8_t *)mapped;
+  cluster_lstm_shard_len = part->size;
+  const uint8_t *q = cluster_lstm_shard_base;
+  uint32_t magic = rd_u32(q);
+  uint16_t version = rd_u16(q);
+  uint16_t worker = rd_u16(q);
+  uint32_t hidden = rd_u32(q);
+  uint32_t layers = rd_u32(q);
+  uint32_t row_start = rd_u32(q);
+  uint32_t row_end = rd_u32(q);
+  uint32_t tensor_count = rd_u32(q);
+  if (magic != RIWS_MAGIC) {
+    Serial.printf("CLUSTER_MODEL_ERROR phase=shard_magic got=0x%08lx\n", (unsigned long)magic);
+    return false;
+  }
+  if (version != 1 || worker != (uint16_t)CLUSTER_BOARD_ID || hidden != (uint32_t)HIDDEN ||
+      layers != (uint32_t)LAYERS || tensor_count == 0 || tensor_count > 32) {
+    Serial.printf("CLUSTER_MODEL_ERROR phase=shard_header version=%u worker=%u hidden=%lu layers=%lu tensors=%lu expected_worker=%u expected_hidden=%u expected_layers=%u\n",
+                  (unsigned)version, (unsigned)worker, (unsigned long)hidden, (unsigned long)layers,
+                  (unsigned long)tensor_count, (unsigned)CLUSTER_BOARD_ID, (unsigned)HIDDEN, (unsigned)LAYERS);
+    return false;
+  }
+  Serial.printf("CLUSTER_MODEL_WORKER_LSTM_SHARD_READY board_id=%u source=weights_partition format=RIWSv%u hidden=%lu layers=%lu rows=%lu-%lu tensors=%lu partition_addr=0x%lx partition_size=%lu\n",
+                (unsigned)CLUSTER_BOARD_ID, (unsigned)version, (unsigned long)hidden,
+                (unsigned long)layers, (unsigned long)row_start, (unsigned long)row_end,
+                (unsigned long)tensor_count, (unsigned long)part->address, (unsigned long)part->size);
+  return true;
+}
+#endif
 
 Tensor *find_tensor(const char *name) {
   for (uint32_t i = 0; i < model.tensor_count; i++) {
@@ -1526,7 +1660,9 @@ static bool cluster_model_init_for_role(bool coordinator) {
     core1_active = true;
   }
   if (!coordinator) {
-#if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_SHARDED_INFERENCE
+#if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_LSTM_SHARD
+    return load_lstm_shard_partition();
+#elif CLUSTER_ROLE_WORKER && CLUSTER_WIFI_SHARDED_INFERENCE
     if (RI_FC_ROWS != VOCAB_SIZE || RI_FC_COLS != HIDDEN) {
       Serial.printf("CLUSTER_MODEL_ERROR phase=embedded_fc_shape rows=%lu cols=%lu expected_rows=%u expected_cols=%u\n",
                     (unsigned long)RI_FC_ROWS, (unsigned long)RI_FC_COLS,

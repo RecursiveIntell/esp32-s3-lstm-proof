@@ -254,7 +254,23 @@ worker1 embedded-FC infer: CLUSTER_RELAY_UPDATE_END board=1 ok=1 status="HTTP/1.
 worker2 embedded-FC infer: CLUSTER_RELAY_UPDATE_END board=2 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=91274
 ```
 
-Boundary: this is a hardware-verified sharded matmul / sharded output-head / fleet-update proof, not a claim that recurrent H256 LSTM state/gates are distributed over WiFi. The useful language path remains the single-board H256 p22 engine plus deterministic local sentinel policy.
+Build-ready TinyStories H512 OTA shard path:
+
+```bash
+python3 tools/export_lstm_gate_shards.py \
+  --weights weights_h512_p7_backup_709ff8.bin \
+  --out-dir shards/tinystories-h512-lstm
+python3 tools/relay_worker_update.py \
+  --role worker1 --mode lstm_shard --target weights \
+  --artifact shards/tinystories-h512-lstm/worker1_lstm_gate_shard.riws \
+  --port /dev/ttyACM0 --wait-worker --relay-timeout 420 --execute
+```
+
+The cluster HTTP server exposes both `/update` for app firmware and `/update_weights` for the `weights` data partition. Coordinator serial relay now supports `target=weights`, so model/shard data can be pushed to workers over the same coordinator USB -> worker WiFi path used for app firmware.
+
+Boundary: this is a hardware-verified sharded matmul / sharded output-head / fleet-update proof, plus a build-verified H512 data-OTA shard path. It is not yet a live proof that recurrent H512 LSTM state/gates are distributed over WiFi. The useful language path remains the single-board H256 p22 / H512 TinyStories engines plus deterministic local sentinel policy.
+
+Full H512 OTA shard plan: `TINYSTORIES_H512_OTA_SHARD_PLAN_2026-07-03.md`. 
 
 ## Related repos
 

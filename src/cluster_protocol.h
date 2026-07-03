@@ -28,6 +28,8 @@ enum ClusterMsgType : uint8_t {
   CLUSTER_MSG_ERROR = 6,
   CLUSTER_MSG_FC_SHARD_REQUEST = 7,
   CLUSTER_MSG_FC_SHARD_RESULT = 8,
+  CLUSTER_MSG_LSTM_GATE_REQUEST = 9,
+  CLUSTER_MSG_LSTM_GATE_RESULT = 10,
 };
 
 struct ClusterPacketHeader {
@@ -335,6 +337,71 @@ static inline bool decode_matmul_result_payload(const uint8_t *payload, size_t p
 static constexpr size_t CLUSTER_FC_HIDDEN = 256;
 static constexpr size_t CLUSTER_FC_REQUEST_PAYLOAD_SIZE = 1 + 4 + CLUSTER_FC_HIDDEN;
 static constexpr size_t CLUSTER_FC_RESULT_PAYLOAD_SIZE = 1 + 1 + 4 + 1 + 1;
+
+static constexpr size_t CLUSTER_LSTM_HIDDEN = 512;
+static constexpr size_t CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE = 1 + 4 + 4 + CLUSTER_LSTM_HIDDEN + CLUSTER_LSTM_HIDDEN;
+static constexpr size_t CLUSTER_LSTM_GATE_RESULT_HEADER_SIZE = 1 + 2 + 2;
+static constexpr size_t CLUSTER_LSTM_GATE_RESULT_MAX_VALUES = 240;
+static constexpr size_t CLUSTER_LSTM_GATE_RESULT_MAX_PAYLOAD_SIZE = CLUSTER_LSTM_GATE_RESULT_HEADER_SIZE + (CLUSTER_LSTM_GATE_RESULT_MAX_VALUES * 2);
+
+static inline bool encode_lstm_gate_request_payload(uint8_t layer, float input_scale, float h_scale,
+                                                    const int8_t *qx, const int8_t *qh, uint8_t *out,
+                                                    size_t out_capacity, size_t *out_len) {
+  if (out == nullptr || out_len == nullptr || qx == nullptr || qh == nullptr) return false;
+  if (out_capacity < CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE) return false;
+  out[0] = layer;
+  write_f32_le(out + 1, input_scale);
+  write_f32_le(out + 5, h_scale);
+  memcpy(out + 9, qx, CLUSTER_LSTM_HIDDEN);
+  memcpy(out + 9 + CLUSTER_LSTM_HIDDEN, qh, CLUSTER_LSTM_HIDDEN);
+  *out_len = CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE;
+  return true;
+}
+
+static inline bool decode_lstm_gate_request_payload(const uint8_t *payload, size_t payload_len,
+                                                    uint8_t *layer_out, float *input_scale_out,
+                                                    float *h_scale_out, int8_t *qx_out, int8_t *qh_out) {
+  if (payload == nullptr || layer_out == nullptr || input_scale_out == nullptr ||
+      h_scale_out == nullptr || qx_out == nullptr || qh_out == nullptr) return false;
+  if (payload_len != CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE) return false;
+  *layer_out = payload[0];
+  *input_scale_out = read_f32_le(payload + 1);
+  *h_scale_out = read_f32_le(payload + 5);
+  memcpy(qx_out, payload + 9, CLUSTER_LSTM_HIDDEN);
+  memcpy(qh_out, payload + 9 + CLUSTER_LSTM_HIDDEN, CLUSTER_LSTM_HIDDEN);
+  return true;
+}
+
+static inline bool encode_lstm_gate_result_payload(uint8_t layer, uint16_t row_start,
+                                                   const int16_t *values, uint16_t count,
+                                                   uint8_t *out, size_t out_capacity, size_t *out_len) {
+  if (out == nullptr || out_len == nullptr || values == nullptr) return false;
+  if (count > CLUSTER_LSTM_GATE_RESULT_MAX_VALUES) return false;
+  const size_t needed = CLUSTER_LSTM_GATE_RESULT_HEADER_SIZE + (size_t)count * 2;
+  if (out_capacity < needed) return false;
+  out[0] = layer;
+  write_u16_le(out + 1, row_start);
+  write_u16_le(out + 3, count);
+  for (uint16_t i = 0; i < count; i++) write_u16_le(out + 5 + (size_t)i * 2, (uint16_t)values[i]);
+  *out_len = needed;
+  return true;
+}
+
+static inline bool decode_lstm_gate_result_payload(const uint8_t *payload, size_t payload_len,
+                                                   uint8_t *layer_out, uint16_t *row_start_out,
+                                                   int16_t *values_out, uint16_t *count_out) {
+  if (payload == nullptr || layer_out == nullptr || row_start_out == nullptr ||
+      values_out == nullptr || count_out == nullptr) return false;
+  if (payload_len < CLUSTER_LSTM_GATE_RESULT_HEADER_SIZE) return false;
+  uint16_t count = read_u16_le(payload + 3);
+  if (count > CLUSTER_LSTM_GATE_RESULT_MAX_VALUES) return false;
+  if (payload_len != CLUSTER_LSTM_GATE_RESULT_HEADER_SIZE + (size_t)count * 2) return false;
+  *layer_out = payload[0];
+  *row_start_out = read_u16_le(payload + 1);
+  *count_out = count;
+  for (uint16_t i = 0; i < count; i++) values_out[i] = (int16_t)read_u16_le(payload + 5 + (size_t)i * 2);
+  return true;
+}
 
 static inline bool encode_fc_shard_request_payload(uint8_t prompt_id, float hidden_scale,
                                                    const int8_t *hidden_q8, uint8_t *out,

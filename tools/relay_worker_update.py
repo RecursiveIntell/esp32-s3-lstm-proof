@@ -22,6 +22,10 @@ ROLE_ENVS = {
         "worker1": "cluster_worker1_ap_infer",
         "worker2": "cluster_worker2_ap_infer",
     },
+    "lstm_shard": {
+        "worker1": "cluster_worker1_ap_lstm_shard",
+        "worker2": "cluster_worker2_ap_lstm_shard",
+    },
 }
 
 
@@ -43,6 +47,7 @@ def wait_for_worker_ip(ser: serial.Serial, board: int, timeout: float) -> None:
         f"CLUSTER_MATMUL_RESULT src_board={board} ",
         f"CLUSTER_WIFI_PONG src_board={board} ",
         f"CLUSTER_FC_RESULT src_board={board} ",
+        f"CLUSTER_WIFI_PING board={board} ",
     )
     while time.monotonic() < deadline:
         raw = ser.readline()
@@ -55,9 +60,10 @@ def wait_for_worker_ip(ser: serial.Serial, board: int, timeout: float) -> None:
     raise TimeoutError(f"timed out waiting for coordinator to observe worker{board} IP")
 
 
-def send_relay_update(ser: serial.Serial, board: int, firmware: Path, timeout: float) -> bool:
-    size = firmware.stat().st_size
-    command = f"CLUSTER_RELAY_UPDATE board={board} size={size}\n".encode()
+def send_relay_update(ser: serial.Serial, board: int, artifact: Path, timeout: float, target: str) -> bool:
+    size = artifact.stat().st_size
+    target_suffix = " target=weights" if target == "weights" else ""
+    command = f"CLUSTER_RELAY_UPDATE board={board} size={size}{target_suffix}\n".encode()
     print(f"SERIAL: {command.decode().rstrip()}")
     ser.write(command)
     ser.flush()
@@ -76,7 +82,7 @@ def send_relay_update(ser: serial.Serial, board: int, firmware: Path, timeout: f
     else:
         raise TimeoutError("timed out waiting for CLUSTER_RELAY_UPDATE_READY_FOR_BYTES")
 
-    with firmware.open("rb") as f:
+    with artifact.open("rb") as f:
         sent = 0
         while True:
             # Pace at the coordinator's relay buffer size. Bursting larger chunks can
@@ -125,35 +131,46 @@ def main() -> int:
     parser.add_argument("--wait-worker", action="store_true", help="Wait until coordinator has observed the target worker IP.")
     parser.add_argument("--wait-timeout", type=float, default=90.0)
     parser.add_argument("--relay-timeout", type=float, default=180.0)
+    parser.add_argument("--target", choices=("app", "weights"), default="app", help="Relay app firmware or data/weights partition bytes.")
+    parser.add_argument("--artifact", help="Existing file to relay. Required for --target weights; optional override for app firmware.")
     parser.add_argument("--execute", action="store_true", help="Build and relay. Default is dry-run.")
     args = parser.parse_args()
 
     board = 1 if args.role == "worker1" else 2
     env = ROLE_ENVS[args.mode][args.role]
     build_cmd = build_command(env)
-    firmware = firmware_path(env)
+    firmware = Path(args.artifact) if args.artifact else firmware_path(env)
+    if not firmware.is_absolute():
+        firmware = Path.cwd() / firmware
 
     mode = "EXECUTE" if args.execute else "DRY_RUN"
     print(f"{mode} role={args.role} board={board} mode={args.mode} env={env} port={args.port}")
     print(f"BUILD: {format_command(build_cmd)}")
-    print(f"FIRMWARE: {firmware}")
-    print(f"SERIAL_RELAY: CLUSTER_RELAY_UPDATE board={board} size=<firmware-bytes>")
+    print(f"ARTIFACT: {firmware}")
+    print(f"TARGET: {args.target}")
+    target_suffix = " target=weights" if args.target == "weights" else ""
+    print(f"SERIAL_RELAY: CLUSTER_RELAY_UPDATE board={board} size=<artifact-bytes>{target_suffix}")
 
     if not args.execute:
         return 0
 
-    build_result = subprocess.run(build_cmd)
-    if build_result.returncode != 0:
-        return build_result.returncode
+    if args.target == "weights":
+        if args.artifact is None:
+            print("ERROR: --artifact is required for --target weights", file=sys.stderr)
+            return 2
+    elif args.artifact is None:
+        build_result = subprocess.run(build_cmd)
+        if build_result.returncode != 0:
+            return build_result.returncode
     if not firmware.is_file():
-        print(f"ERROR: firmware artifact not found: {firmware}", file=sys.stderr)
+        print(f"ERROR: artifact not found: {firmware}", file=sys.stderr)
         return 2
 
     with serial.Serial(args.port, args.baud, timeout=0.2, write_timeout=10) as ser:
         ser.reset_input_buffer()
         if args.wait_worker:
             wait_for_worker_ip(ser, board, args.wait_timeout)
-        ok = send_relay_update(ser, board, firmware, args.relay_timeout)
+        ok = send_relay_update(ser, board, firmware, args.relay_timeout, args.target)
     return 0 if ok else 1
 
 
