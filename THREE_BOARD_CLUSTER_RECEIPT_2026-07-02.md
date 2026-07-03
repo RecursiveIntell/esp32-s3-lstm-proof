@@ -87,7 +87,13 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - Worker2 hardware: ESP32-S3 MAC `94:a9:90:d2:40:b0`.
   - Worker2 reply receipt: `CLUSTER_WIFI_PING board=2 seq=228 from_board=0 from=192.168.4.1:42100 reply=sent rssi=-43`.
   - Coordinator receive receipt: `CLUSTER_WIFI_PONG src_board=2 seq=229 from=192.168.4.3:42100 rssi=0`.
-- [ ] Task 1.4 two-worker WiFi barrier sync proof (UDP with fallback notes)
+- [x] Task 1.4 two-worker WiFi barrier sync proof (UDP with fallback notes)
+  - 2026-07-03 live AP-mode receipt: both workers powered from non-laptop power and coordinator on `/dev/ttyACM0`.
+  - Coordinator broadcast: `CLUSTER_WIFI_PING_BROADCAST seq=431 dst=192.168.4.255 port=42100 sent=true`.
+  - Worker1 receive: `CLUSTER_WIFI_PONG src_board=1 seq=431 from=192.168.4.2:42100 rssi=0`.
+  - Worker2 receive: `CLUSTER_WIFI_PONG src_board=2 seq=431 from=192.168.4.3:42100 rssi=0`.
+  - Result: coordinator observed both workers replying to the same UDP broadcast sequence in one live window.
+  - Note: RGB LEDs are not driven by the current WiFi worker firmware; power LED on + coordinator PONG receipt is the verification signal.
 - [ ] Task 1.5 Coordinator AP and OTA provisioning plan
 
 ## Phase 2: Sharded matmul proof with synthetic data
