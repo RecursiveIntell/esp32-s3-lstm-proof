@@ -350,6 +350,10 @@ static void cluster_setup_http_update() {
         cluster_http_update_server.send(ok ? 200 : 500, "text/plain", ok ? "OK\n" : "FAIL\n");
         Serial.printf("CLUSTER_HTTP_DATA_UPDATE_END ok=%u label=weights bytes=%u\n",
                       ok ? 1 : 0, (unsigned)cluster_http_data_written);
+        if (ok) {
+          delay(300);
+          ESP.restart();
+        }
       },
       []() {
         HTTPUpload &upload = cluster_http_update_server.upload();
@@ -434,12 +438,21 @@ static bool cluster_parse_relay_update_command(const String &line, uint8_t *boar
 }
 
 static void cluster_relay_worker_update(uint8_t board, uint32_t firmware_size, bool weights_target) {
-  if (board >= 3 || !cluster_worker_ip_known[board]) {
-    Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=target board=%u reason=worker_ip_unknown\n", (unsigned)board);
+  if (board >= 3) {
+    Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=target board=%u reason=bad_board\n", (unsigned)board);
     return;
   }
 
   IPAddress target_ip = cluster_worker_ips[board];
+  if (board < 3 && !cluster_worker_ip_known[board]) {
+    // Last-known SoftAP DHCP assignments from live cluster receipts. This lets the
+    // coordinator attempt a direct HTTP relay even if UDP discovery is missing; a
+    // failed connect is then a real reachability/power receipt instead of only an
+    // unknown-IP precondition failure.
+    target_ip = (board == 1) ? IPAddress(192, 168, 4, 3) : IPAddress(192, 168, 4, 2);
+    Serial.printf("CLUSTER_RELAY_UPDATE_WARN board=%u reason=worker_ip_unknown using_fallback_ip=%s\n",
+                  (unsigned)board, target_ip.toString().c_str());
+  }
   WiFiClient client;
   constexpr uint16_t target_port = CLUSTER_HTTP_UPDATE_PORT;
   const char *boundary = "----RIESP32S3RelayBoundary";
@@ -565,7 +578,7 @@ static void cluster_handle_serial_relay() {
     Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=parse line=%s\n", line.c_str());
     return;
   }
-  Serial.setTimeout(10000);
+  Serial.setTimeout(60000);
   cluster_relay_worker_update(board, firmware_size, weights_target);
   Serial.setTimeout(1000);
 }
@@ -732,12 +745,14 @@ static void cluster_handle_udp_packet() {
   if (header.msg_type == cluster_protocol::CLUSTER_MSG_PING) {
 #if CLUSTER_ROLE_WORKER
     if (header.dst_board == CLUSTER_BROADCAST_BOARD || header.dst_board == (uint8_t)CLUSTER_BOARD_ID) {
+      uint8_t pong_payload[1] = { cluster_model_ready ? (uint8_t)1 : (uint8_t)0 };
       bool ok = cluster_send_packet(cluster_udp.remoteIP(), cluster_udp.remotePort(),
-                                    cluster_protocol::CLUSTER_MSG_PONG, header.src_board, header.seq);
-      Serial.printf("CLUSTER_WIFI_PING board=%u seq=%lu from_board=%u from=%s:%u reply=%s rssi=%ld\n",
+                                    cluster_protocol::CLUSTER_MSG_PONG, header.src_board, header.seq,
+                                    pong_payload, sizeof(pong_payload));
+      Serial.printf("CLUSTER_WIFI_PING board=%u seq=%lu from_board=%u from=%s:%u model_ready=%u reply=%s rssi=%ld\n",
                     (unsigned)CLUSTER_BOARD_ID, (unsigned long)header.seq, (unsigned)header.src_board,
-                    cluster_udp.remoteIP().toString().c_str(), cluster_udp.remotePort(), ok ? "sent" : "failed",
-                    (long)WiFi.RSSI());
+                    cluster_udp.remoteIP().toString().c_str(), cluster_udp.remotePort(),
+                    cluster_model_ready ? 1 : 0, ok ? "sent" : "failed", (long)WiFi.RSSI());
     }
 #endif
     return;
@@ -749,9 +764,11 @@ static void cluster_handle_udp_packet() {
       cluster_worker_ips[header.src_board] = cluster_udp.remoteIP();
       cluster_worker_ip_known[header.src_board] = true;
     }
-    Serial.printf("CLUSTER_WIFI_PONG src_board=%u seq=%lu from=%s:%u rssi=%ld\n",
+    int model_ready_payload = payload_len >= 1 ? (int)payload[0] : -1;
+    Serial.printf("CLUSTER_WIFI_PONG src_board=%u seq=%lu from=%s:%u rssi=%ld model_ready=%d\n",
                   (unsigned)header.src_board, (unsigned long)header.seq,
-                  cluster_udp.remoteIP().toString().c_str(), cluster_udp.remotePort(), (long)WiFi.RSSI());
+                  cluster_udp.remoteIP().toString().c_str(), cluster_udp.remotePort(), (long)WiFi.RSSI(),
+                  model_ready_payload);
 #endif
     return;
   }
@@ -975,17 +992,20 @@ static void cluster_loop_wifi_demo() {
     }
   }
 #endif
-#if CLUSTER_WIFI_SHARDED_INFERENCE
+#if CLUSTER_WIFI_SHARDED_INFERENCE || CLUSTER_WIFI_LSTM_SHARD
   if (now - cluster_last_ping_ms >= 2000) {
     cluster_last_ping_ms = now;
     uint32_t ping_seq = cluster_ping_seq++;
     bool ping_ok = cluster_send_packet(CLUSTER_AP_BROADCAST, CLUSTER_WIFI_UDP_PORT,
                                        cluster_protocol::CLUSTER_MSG_PING,
                                        CLUSTER_BROADCAST_BOARD, ping_seq);
-    Serial.printf("CLUSTER_WIFI_PING_BROADCAST seq=%lu dst=%s port=%u sent=%s reason=infer_discovery\n",
+    Serial.printf("CLUSTER_WIFI_PING_BROADCAST seq=%lu dst=%s port=%u sent=%s reason=%s\n",
                   (unsigned long)ping_seq, CLUSTER_AP_BROADCAST.toString().c_str(),
-                  (unsigned)CLUSTER_WIFI_UDP_PORT, ping_ok ? "true" : "false");
+                  (unsigned)CLUSTER_WIFI_UDP_PORT, ping_ok ? "true" : "false",
+                  CLUSTER_WIFI_LSTM_SHARD ? "lstm_shard_discovery" : "infer_discovery");
   }
+#endif
+#if CLUSTER_WIFI_SHARDED_INFERENCE
   if (cluster_model_ready && now - cluster_last_fc_ms >= 8000) {
     cluster_last_fc_ms = now;
     const uint32_t seq = cluster_fc_seq++;

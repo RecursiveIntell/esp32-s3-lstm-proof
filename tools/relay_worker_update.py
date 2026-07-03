@@ -88,15 +88,22 @@ def send_relay_update(ser: serial.Serial, board: int, artifact: Path, timeout: f
             # Pace at the coordinator's relay buffer size. Bursting larger chunks can
             # overrun CDC while the coordinator is also forwarding to WiFi, causing a
             # late serial_read timeout after most of the image has been received.
-            chunk = f.read(1024)
+            chunk = f.read(512)
             if not chunk:
                 break
-            ser.write(chunk)
+            written = 0
+            while written < len(chunk):
+                n = ser.write(chunk[written:])
+                if n is None:
+                    n = len(chunk) - written
+                if n <= 0:
+                    raise TimeoutError("serial write returned zero bytes")
+                written += n
             ser.flush()
             sent += len(chunk)
             if sent % 65536 < len(chunk) or sent == size:
                 print(f"HOST_RELAY_PROGRESS sent={sent} total={size}")
-            time.sleep(0.01)
+            time.sleep(0.02)
         ser.flush()
 
     ok = False

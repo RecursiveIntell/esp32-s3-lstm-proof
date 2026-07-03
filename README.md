@@ -268,9 +268,19 @@ python3 tools/relay_worker_update.py \
 
 The cluster HTTP server exposes both `/update` for app firmware and `/update_weights` for the `weights` data partition. Coordinator serial relay now supports `target=weights`, so model/shard data can be pushed to workers over the same coordinator USB -> worker WiFi path used for app firmware.
 
-Boundary: this is a hardware-verified sharded matmul / sharded output-head / fleet-update proof, plus a build-verified H512 data-OTA shard path. It is not yet a live proof that recurrent H512 LSTM state/gates are distributed over WiFi. The useful language path remains the single-board H256 p22 / H512 TinyStories engines plus deterministic local sentinel policy.
+Live data-OTA receipt captured after this path was added:
 
-Full H512 OTA shard plan: `TINYSTORIES_H512_OTA_SHARD_PLAN_2026-07-03.md`. 
+```text
+worker2 app relay:  CLUSTER_RELAY_UPDATE_END board=2 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=109343
+worker2 data relay: CLUSTER_RELAY_UPDATE_END board=2 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=294556
+worker2 ready:      CLUSTER_WIFI_PONG src_board=2 seq=17 from=192.168.4.2:42100 rssi=0 model_ready=1
+worker1 attempt:    CLUSTER_RELAY_UPDATE_ERROR phase=connect board=1 ip=192.168.4.3
+```
+
+Boundary: this is a hardware-verified sharded matmul / sharded output-head / fleet-update proof, plus a live worker2 H512 data-OTA shard proof. Worker1 data OTA remains blocked by current hardware reachability: worker1 did not appear on the coordinator AP and direct fallback connect to `192.168.4.3:8080` failed. It is not yet a live proof that recurrent H512 LSTM state/gates are distributed over WiFi. The useful language path remains the single-board H256 p22 / H512 TinyStories engines plus deterministic local sentinel policy.
+
+Full H512 OTA shard plan: `TINYSTORIES_H512_OTA_SHARD_PLAN_2026-07-03.md`.
+Live worker2 receipt: `TINYSTORIES_H512_DATA_OTA_LIVE_RECEIPT_2026-07-03.md`. 
 
 ## Related repos
 
