@@ -1,6 +1,8 @@
 # Claude Code Routing for 3-Board ESP32-S3 Cluster
 
-This file records the intended Claude Code execution split for `/home/sikmindz/projects/esp32-s3-lstm-proof/docs/plans/2026-07-02-three-board-esp32s3-cluster-plan.md`.
+SUPERSEDED: Josh changed routing to Codex-first. Use `docs/plans/codex-cluster-routing.md` as the active routing document.
+
+This file records the earlier Claude Code execution split for `/home/sikmindz/projects/esp32-s3-lstm-proof/docs/plans/2026-07-02-three-board-esp32s3-cluster-plan.md`.
 
 ## Current blocker
 
