@@ -3,6 +3,8 @@
 #include <esp_spi_flash.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <soc/soc.h>
+#include <soc/rtc_cntl_reg.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
@@ -171,7 +173,8 @@ static bool cluster_compute_fc_shard(uint8_t worker_board, const int8_t *hidden_
 static const char *cluster_prompt_for_id(uint8_t prompt_id);
 #if CLUSTER_WIFI_LSTM_SHARD
 static bool cluster_prepare_lstm_gate_probe(uint8_t layer);
-static bool cluster_worker_compute_lstm_gate_probe(uint8_t layer, const int8_t *qx, float input_scale,
+static bool cluster_worker_compute_lstm_gate_probe(uint8_t layer, uint16_t row_start, uint16_t count,
+                                                   const int8_t *qx, float input_scale,
                                                    const int8_t *qh, float h_scale,
                                                    uint16_t *row_start_out, int32_t *values_out,
                                                    uint16_t *count_out);
@@ -881,11 +884,14 @@ static void cluster_handle_udp_packet() {
 #if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_LSTM_SHARD
     if (header.dst_board == CLUSTER_BROADCAST_BOARD || header.dst_board == (uint8_t)CLUSTER_BOARD_ID) {
       uint8_t layer = 0;
+      uint16_t row_start_req = 0;
+      uint16_t count_req = 0;
       float input_scale = 1.0f;
       float h_scale = 1.0f;
       int8_t qx[cluster_protocol::CLUSTER_LSTM_HIDDEN] __attribute__((aligned(16)));
       int8_t qh[cluster_protocol::CLUSTER_LSTM_HIDDEN] __attribute__((aligned(16)));
       if (!cluster_protocol::decode_lstm_gate_request_payload(payload, payload_len, &layer,
+                                                              &row_start_req, &count_req,
                                                               &input_scale, &h_scale, qx, qh)) {
         Serial.printf("CLUSTER_LSTM_GATE_DROP reason=bad_request_payload src_board=%u seq=%lu\n",
                       (unsigned)header.src_board, (unsigned long)header.seq);
@@ -894,9 +900,9 @@ static void cluster_handle_udp_packet() {
       uint16_t row_start = 0;
       uint16_t count = 0;
       int32_t values[32];
-      bool computed = cluster_model_ready && cluster_worker_compute_lstm_gate_probe(layer, qx, input_scale,
-                                                                                    qh, h_scale, &row_start,
-                                                                                    values, &count);
+      bool computed = cluster_model_ready && cluster_worker_compute_lstm_gate_probe(layer, row_start_req, count_req,
+                                                                                    qx, input_scale, qh, h_scale,
+                                                                                    &row_start, values, &count);
       uint8_t result_payload[cluster_protocol::CLUSTER_LSTM_GATE_RESULT_MAX_PAYLOAD_SIZE];
       size_t result_payload_len = 0;
       bool encoded = computed && cluster_protocol::encode_lstm_gate_result_payload(
@@ -925,6 +931,7 @@ static void cluster_handle_udp_packet() {
 }
 
 static void cluster_setup_wifi_demo() {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.begin(115200);
   delay(1500);
   Serial.printf("\nESP32-S3 cluster WiFi demo boot board_id=%u role=%s mode=%s\n",
@@ -954,7 +961,7 @@ static void cluster_setup_wifi_demo() {
 #if CLUSTER_WIFI_AP_MODE
   WiFi.mode(WIFI_AP);
   WiFi.setSleep(false);
-  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  WiFi.setTxPower(WIFI_POWER_2dBm);
   WiFi.softAPConfig(CLUSTER_AP_IP, CLUSTER_AP_GATEWAY, CLUSTER_AP_NETMASK);
   bool ap_ok = WiFi.softAP(CLUSTER_WIFI_SSID, CLUSTER_WIFI_PASSPHRASE);
   delay(200);
@@ -967,7 +974,7 @@ static void cluster_setup_wifi_demo() {
 #elif CLUSTER_ROLE_WORKER
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
-  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  WiFi.setTxPower(WIFI_POWER_2dBm);
   WiFi.begin(CLUSTER_WIFI_SSID, CLUSTER_WIFI_PASSPHRASE);
   Serial.printf("CLUSTER_WIFI_STA_CONNECTING board_id=%u ssid=%s\n", (unsigned)CLUSTER_BOARD_ID,
                 CLUSTER_WIFI_SSID);
@@ -1116,22 +1123,24 @@ static void cluster_loop_wifi_demo() {
     const uint32_t seq = cluster_lstm_gate_seq++;
     const uint8_t layer = 0;
     bool prepared = cluster_prepare_lstm_gate_probe(layer);
-    uint8_t request_payload[cluster_protocol::CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE];
-    size_t request_payload_len = 0;
-    bool encoded = prepared && cluster_protocol::encode_lstm_gate_request_payload(
-                                   layer, cluster_lstm_gate_input_scale, cluster_lstm_gate_h_scale,
-                                   cluster_lstm_gate_qx, cluster_lstm_gate_qh,
-                                   request_payload, sizeof(request_payload), &request_payload_len);
     cluster_lstm_gate_active_seq = seq;
     cluster_lstm_gate_seen[1] = false;
     cluster_lstm_gate_seen[2] = false;
     cluster_lstm_gate_max_abs_err[1] = 0;
     cluster_lstm_gate_max_abs_err[2] = 0;
     cluster_lstm_gate_gather_printed = false;
-    Serial.printf("CLUSTER_LSTM_GATE_REQUEST seq=%lu layer=%u token=o input_scale=%.9f h_scale=%.9f encoded=%s\n",
+    Serial.printf("CLUSTER_LSTM_GATE_REQUEST seq=%lu layer=%u token=o input_scale=%.9f h_scale=%.9f prepared=%s\n",
                   (unsigned long)seq, (unsigned)layer, (double)cluster_lstm_gate_input_scale,
-                  (double)cluster_lstm_gate_h_scale, encoded ? "true" : "false");
+                  (double)cluster_lstm_gate_h_scale, prepared ? "true" : "false");
     for (uint8_t dst = 1; dst <= 2; dst++) {
+      uint8_t request_payload[cluster_protocol::CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE];
+      size_t request_payload_len = 0;
+      uint16_t row_start = (dst == 1) ? 0 : 1024;
+      bool encoded = prepared && cluster_protocol::encode_lstm_gate_request_payload(
+                                   layer, row_start, 16,
+                                   cluster_lstm_gate_input_scale, cluster_lstm_gate_h_scale,
+                                   cluster_lstm_gate_qx, cluster_lstm_gate_qh,
+                                   request_payload, sizeof(request_payload), &request_payload_len);
       IPAddress target = cluster_worker_ip_known[dst] ? cluster_worker_ips[dst] : CLUSTER_AP_BROADCAST;
       bool sent = encoded && cluster_send_packet(target, CLUSTER_WIFI_UDP_PORT,
                                                  cluster_protocol::CLUSTER_MSG_LSTM_GATE_REQUEST,
@@ -1972,12 +1981,16 @@ static bool cluster_expected_lstm_gate_values(uint8_t layer, uint16_t row_start,
 #endif
 }
 
-static bool cluster_worker_compute_lstm_gate_probe(uint8_t layer, const int8_t *qx, float input_scale,
+static bool cluster_worker_compute_lstm_gate_probe(uint8_t layer, uint16_t row_start, uint16_t requested_count,
+                                                   const int8_t *qx, float input_scale,
                                                    const int8_t *qh, float h_scale,
                                                    uint16_t *row_start_out, int32_t *values_out,
                                                    uint16_t *count_out) {
 #if CLUSTER_ROLE_WORKER
   if (layer >= LAYERS || !qx || !qh || !row_start_out || !values_out || !count_out) return false;
+  if (requested_count == 0 || requested_count > cluster_protocol::CLUSTER_LSTM_GATE_RESULT_MAX_VALUES) return false;
+  if (row_start < cluster_lstm_shard_row_start || row_start > cluster_lstm_shard_row_end) return false;
+  if ((uint32_t)row_start + requested_count - 1 > cluster_lstm_shard_row_end) return false;
   char wih_name[32], whh_name[32], bih_name[32], bhh_name[32];
   lstm_tensor_names(layer, wih_name, whh_name, bih_name, bhh_name, sizeof(wih_name));
   ClusterShardTensor *wih = find_lstm_shard_tensor(wih_name);
@@ -1985,11 +1998,10 @@ static bool cluster_worker_compute_lstm_gate_probe(uint8_t layer, const int8_t *
   ClusterShardTensor *bih = find_lstm_shard_tensor(bih_name);
   ClusterShardTensor *bhh = find_lstm_shard_tensor(bhh_name);
   if (!wih || !whh || !bih || !bhh) return false;
-  const uint16_t count = 16;
-  *row_start_out = (uint16_t)cluster_lstm_shard_row_start;
-  *count_out = count;
-  for (uint16_t i = 0; i < count; i++) {
-    uint32_t local_g = i;
+  *row_start_out = row_start;
+  *count_out = requested_count;
+  for (uint16_t i = 0; i < requested_count; i++) {
+    uint32_t local_g = (uint32_t)(row_start - cluster_lstm_shard_row_start) + i;
     float acc = shard_f32_at(bih, local_g) + shard_f32_at(bhh, local_g);
     acc += dot_shard_tensor_q8(wih, local_g * HIDDEN, qx, input_scale, HIDDEN);
     acc += dot_shard_tensor_q8(whh, local_g * HIDDEN, qh, h_scale, HIDDEN);
@@ -1997,7 +2009,7 @@ static bool cluster_worker_compute_lstm_gate_probe(uint8_t layer, const int8_t *
   }
   return true;
 #else
-  (void)layer; (void)qx; (void)input_scale; (void)qh; (void)h_scale; (void)row_start_out; (void)values_out; (void)count_out;
+  (void)layer; (void)row_start; (void)requested_count; (void)qx; (void)input_scale; (void)qh; (void)h_scale; (void)row_start_out; (void)values_out; (void)count_out;
   return false;
 #endif
 }

@@ -372,7 +372,7 @@ if __name__ == "__main__":
 def test_lstm_gate_payloads() -> None:
     qx = bytes((i % 256 for i in range(LSTM_HIDDEN)))
     qh = bytes(((255 - i) % 256 for i in range(LSTM_HIDDEN)))
-    payload = encode_lstm_gate_request_payload(2, 0.25, 0.5, qx, qh)
+    payload = encode_lstm_gate_request_payload(2, 480, 16, 0.25, 0.5, qx, qh)
     packet = encode_packet(LSTM_GATE_REQUEST, src_board=0, dst_board=1, seq=44, payload=payload)
     header, decoded = decode_packet(packet)
     layer, input_scale, h_scale, got_qx, got_qh = decode_lstm_gate_request_payload(decoded)

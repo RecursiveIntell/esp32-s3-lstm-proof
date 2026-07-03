@@ -339,36 +339,43 @@ static constexpr size_t CLUSTER_FC_REQUEST_PAYLOAD_SIZE = 1 + 4 + CLUSTER_FC_HID
 static constexpr size_t CLUSTER_FC_RESULT_PAYLOAD_SIZE = 1 + 1 + 4 + 1 + 1;
 
 static constexpr size_t CLUSTER_LSTM_HIDDEN = 512;
-static constexpr size_t CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE = 1 + 4 + 4 + CLUSTER_LSTM_HIDDEN + CLUSTER_LSTM_HIDDEN;
+static constexpr size_t CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE = 1 + 2 + 2 + 4 + 4 + CLUSTER_LSTM_HIDDEN + CLUSTER_LSTM_HIDDEN;
 static constexpr size_t CLUSTER_LSTM_GATE_RESULT_HEADER_SIZE = 1 + 2 + 2;
 static constexpr size_t CLUSTER_LSTM_GATE_RESULT_MAX_VALUES = 120;
 static constexpr size_t CLUSTER_LSTM_GATE_RESULT_MAX_PAYLOAD_SIZE = CLUSTER_LSTM_GATE_RESULT_HEADER_SIZE + (CLUSTER_LSTM_GATE_RESULT_MAX_VALUES * 4);
 
-static inline bool encode_lstm_gate_request_payload(uint8_t layer, float input_scale, float h_scale,
+static inline bool encode_lstm_gate_request_payload(uint8_t layer, uint16_t row_start, uint16_t count,
+                                                    float input_scale, float h_scale,
                                                     const int8_t *qx, const int8_t *qh, uint8_t *out,
                                                     size_t out_capacity, size_t *out_len) {
   if (out == nullptr || out_len == nullptr || qx == nullptr || qh == nullptr) return false;
   if (out_capacity < CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE) return false;
   out[0] = layer;
-  write_f32_le(out + 1, input_scale);
-  write_f32_le(out + 5, h_scale);
-  memcpy(out + 9, qx, CLUSTER_LSTM_HIDDEN);
-  memcpy(out + 9 + CLUSTER_LSTM_HIDDEN, qh, CLUSTER_LSTM_HIDDEN);
+  write_u16_le(out + 1, row_start);
+  write_u16_le(out + 3, count);
+  write_f32_le(out + 5, input_scale);
+  write_f32_le(out + 9, h_scale);
+  memcpy(out + 13, qx, CLUSTER_LSTM_HIDDEN);
+  memcpy(out + 13 + CLUSTER_LSTM_HIDDEN, qh, CLUSTER_LSTM_HIDDEN);
   *out_len = CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE;
   return true;
 }
 
 static inline bool decode_lstm_gate_request_payload(const uint8_t *payload, size_t payload_len,
-                                                    uint8_t *layer_out, float *input_scale_out,
-                                                    float *h_scale_out, int8_t *qx_out, int8_t *qh_out) {
-  if (payload == nullptr || layer_out == nullptr || input_scale_out == nullptr ||
-      h_scale_out == nullptr || qx_out == nullptr || qh_out == nullptr) return false;
+                                                    uint8_t *layer_out, uint16_t *row_start_out, uint16_t *count_out,
+                                                    float *input_scale_out, float *h_scale_out,
+                                                    int8_t *qx_out, int8_t *qh_out) {
+  if (payload == nullptr || layer_out == nullptr || row_start_out == nullptr || count_out == nullptr ||
+      input_scale_out == nullptr || h_scale_out == nullptr || qx_out == nullptr || qh_out == nullptr) return false;
   if (payload_len != CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE) return false;
   *layer_out = payload[0];
-  *input_scale_out = read_f32_le(payload + 1);
-  *h_scale_out = read_f32_le(payload + 5);
-  memcpy(qx_out, payload + 9, CLUSTER_LSTM_HIDDEN);
-  memcpy(qh_out, payload + 9 + CLUSTER_LSTM_HIDDEN, CLUSTER_LSTM_HIDDEN);
+  *row_start_out = read_u16_le(payload + 1);
+  *count_out = read_u16_le(payload + 3);
+  if (*count_out > CLUSTER_LSTM_GATE_RESULT_MAX_VALUES) return false;
+  *input_scale_out = read_f32_le(payload + 5);
+  *h_scale_out = read_f32_le(payload + 9);
+  memcpy(qx_out, payload + 13, CLUSTER_LSTM_HIDDEN);
+  memcpy(qh_out, payload + 13 + CLUSTER_LSTM_HIDDEN, CLUSTER_LSTM_HIDDEN);
   return true;
 }
 
