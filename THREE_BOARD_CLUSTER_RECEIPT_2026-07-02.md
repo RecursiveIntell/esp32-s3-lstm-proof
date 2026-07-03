@@ -45,7 +45,10 @@ Track the live implementation plan for a 3-board ESP32-S3 tensor-parallel cluste
 
 ## Phase 1: Multi-board transport proof
 
-- [ ] Task 1.1 board-role firmware variants
+- [x] Task 1.1 board-role firmware variants
+  - 2026-07-02: `pio run -e cluster_coord` — SUCCESS (`00:00:05.871`), role macros: `CLUSTER_ROLE_COORD=1`, `CLUSTER_BOARD_ID=0`
+  - 2026-07-02: `pio run -e cluster_worker1` — SUCCESS (`00:00:08.123`), role macros: `CLUSTER_ROLE_WORKER=1`, `CLUSTER_BOARD_ID=1`
+  - 2026-07-02: `pio run -e cluster_worker2` — SUCCESS (`00:00:08.173`), role macros: `CLUSTER_ROLE_WORKER=1`, `CLUSTER_BOARD_ID=2`
 - [ ] Task 1.2 packet framing and CRC format
 - [ ] Task 1.3 worker echo firmware proof
 - [ ] Task 1.4 two-worker barrier sync proof
@@ -79,4 +82,3 @@ Track the live implementation plan for a 3-board ESP32-S3 tensor-parallel cluste
 ## Phase 7: Sensor-grounded demo integration
 
 - [ ] Task 7.x pending
-

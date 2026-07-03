@@ -10,6 +10,16 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifndef CLUSTER_BOARD_ID
+#define CLUSTER_BOARD_ID 0
+#endif
+#ifndef CLUSTER_ROLE_COORD
+#define CLUSTER_ROLE_COORD 0
+#endif
+#ifndef CLUSTER_ROLE_WORKER
+#define CLUSTER_ROLE_WORKER 0
+#endif
+
 extern "C" {
 #include "esp_nn.h"
 int32_t esp_nn_dot_s8_aligned_esp32s3(const int8_t *a, const int8_t *b, int32_t len);
