@@ -273,6 +273,29 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - HTTP update receipt: `CLUSTER_HTTP_UPDATE_READY board_id=2 ip=192.168.4.2 port=8080 endpoint=/update`
   - brownout check after low-TX flash: `BROWNOUT_RST False`.
   - live worker matmul receipt after flash: `CLUSTER_MATMUL_WORKER board=2 seq=2765 fixture=1 dot=-408 expected=-408 ok=true reply=sent rssi=-43`.
+- 2026-07-03 worker2 USB flash to dual-slot relay-compatible firmware:
+  - command: `python3 tools/flash_cluster_wifi.py --role worker2 --mode matmul --port /dev/ttyACM1 --execute`
+  - result: SUCCESS
+  - hardware MAC: `94:a9:90:d2:40:b0`
+  - partition fix present: dual 1MiB OTA app slots (`app0` + `app1`), worker firmware size `773945 / 1048576` bytes.
+  - build verification before flash: `python3 tools/test_cluster_protocol.py` PASS; `python3 -m py_compile tools/*.py` PASS; `pio run -e cluster_worker2_ap_matmul` SUCCESS.
+  - boot receipt: `ESP32-S3 cluster WiFi demo boot board_id=2 role=worker mode=matmul`
+  - WiFi receipt: `CLUSTER_WIFI_WORKER_READY board_id=2 ip=192.168.4.2 rssi=-50 port=42100`
+  - OTA receipt: `CLUSTER_OTA_READY board_id=2 hostname=ri-esp-cluster-worker2 ip=192.168.4.2 port=3232`
+  - HTTP update receipt: `CLUSTER_HTTP_UPDATE_READY board_id=2 ip=192.168.4.2 port=8080 endpoint=/update`
+  - brownout check after flash: `BROWNOUT_RST False`.
+  - live worker matmul receipt after flash: `CLUSTER_MATMUL_WORKER board=2 seq=206 fixture=2 dot=-80 expected=-80 ok=true reply=sent rssi=-51`.
+  - post-USB cluster verifier: `PASS cluster matmul fixture=1 seq=217 worker1=272 worker2=-408 total=-136; fixture=2 seq=218 worker1=88 worker2=-80 total=8`.
+- 2026-07-03 worker2 coordinator-relayed HTTP update proof:
+  - command: `python3 tools/relay_worker_update.py --role worker2 --mode matmul --port /dev/ttyACM0 --wait-worker --relay-timeout 240 --execute`
+  - result: SUCCESS
+  - relay start: `CLUSTER_RELAY_UPDATE_START board=2 ip=192.168.4.2 port=8080 bytes=774304`
+  - relay ready: `CLUSTER_RELAY_UPDATE_READY_FOR_BYTES board=2 bytes=774304`
+  - relay final progress: `CLUSTER_RELAY_UPDATE_PROGRESS board=2 sent=774304 total=774304`
+  - worker HTTP response: `HTTP/1.1 200 OK`; body `OK`
+  - relay end: `CLUSTER_RELAY_UPDATE_END board=2 ok=1 status="HTTP/1.1 200 OK" elapsed_ms=86717`
+  - post-relay cluster verifier: `PASS cluster matmul fixture=1 seq=237 worker1=272 worker2=-408 total=-136; fixture=2 seq=238 worker1=88 worker2=-80 total=8`
+  - brownout check in post-relay worker serial window: `BROWNOUT_RST False`.
 
 ## Coordinator serial relay update path
 
