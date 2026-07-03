@@ -34,6 +34,7 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include <WebServer.h>
+#include <WiFiClient.h>
 #include <Update.h>
 
 #if __has_include("wifi_secrets.local.h")
@@ -119,6 +120,10 @@ static int32_t cluster_matmul_worker2_dot = 0;
 static bool cluster_matmul_worker1_seen = false;
 static bool cluster_matmul_worker2_seen = false;
 static bool cluster_matmul_gather_printed = false;
+#if CLUSTER_ROLE_COORD
+static IPAddress cluster_worker_ips[3];
+static bool cluster_worker_ip_known[3] = {false, false, false};
+#endif
 static constexpr uint8_t CLUSTER_BROADCAST_BOARD = 255;
 static const IPAddress CLUSTER_AP_IP(192, 168, 4, 1);
 static const IPAddress CLUSTER_AP_GATEWAY(192, 168, 4, 1);
@@ -257,6 +262,157 @@ static void cluster_setup_http_update() {
 }
 #endif
 
+#if CLUSTER_ROLE_COORD && CLUSTER_ENABLE_HTTP_UPDATE
+static bool cluster_parse_relay_update_command(const String &line, uint8_t *board_out, uint32_t *size_out) {
+  if (board_out == nullptr || size_out == nullptr) return false;
+  if (!line.startsWith("CLUSTER_RELAY_UPDATE ")) return false;
+
+  int board = -1;
+  unsigned long parsed_size = 0;
+  int parsed = sscanf(line.c_str(), "CLUSTER_RELAY_UPDATE board=%d size=%lu", &board, &parsed_size);
+  if (parsed != 2) return false;
+  if (board < 1 || board > 2 || parsed_size == 0) return false;
+
+  *board_out = (uint8_t)board;
+  *size_out = (uint32_t)parsed_size;
+  return true;
+}
+
+static void cluster_relay_worker_update(uint8_t board, uint32_t firmware_size) {
+  if (board >= 3 || !cluster_worker_ip_known[board]) {
+    Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=target board=%u reason=worker_ip_unknown\n", (unsigned)board);
+    return;
+  }
+
+  IPAddress target_ip = cluster_worker_ips[board];
+  WiFiClient client;
+  constexpr uint16_t target_port = CLUSTER_HTTP_UPDATE_PORT;
+  const char *boundary = "----RIESP32S3RelayBoundary";
+  String prefix = String("--") + boundary +
+                  "\r\nContent-Disposition: form-data; name=\"update\"; filename=\"firmware.bin\"\r\n" +
+                  "Content-Type: application/octet-stream\r\n\r\n";
+  String suffix = String("\r\n--") + boundary + "--\r\n";
+  const uint32_t content_length = (uint32_t)prefix.length() + firmware_size + (uint32_t)suffix.length();
+
+  Serial.printf("CLUSTER_RELAY_UPDATE_START board=%u ip=%s port=%u bytes=%lu\n",
+                (unsigned)board, target_ip.toString().c_str(), (unsigned)target_port,
+                (unsigned long)firmware_size);
+
+  if (!client.connect(target_ip, target_port)) {
+    Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=connect board=%u ip=%s\n",
+                  (unsigned)board, target_ip.toString().c_str());
+    return;
+  }
+  client.setTimeout(15000);
+  client.printf("POST /update HTTP/1.1\r\n");
+  client.printf("Host: %s:%u\r\n", target_ip.toString().c_str(), (unsigned)target_port);
+  client.printf("Content-Type: multipart/form-data; boundary=%s\r\n", boundary);
+  client.printf("Content-Length: %lu\r\n", (unsigned long)content_length);
+  client.printf("Connection: close\r\n\r\n");
+  client.print(prefix);
+  Serial.printf("CLUSTER_RELAY_UPDATE_READY_FOR_BYTES board=%u bytes=%lu\n",
+                (unsigned)board, (unsigned long)firmware_size);
+
+  uint8_t buf[1024];
+  uint32_t remaining = firmware_size;
+  uint32_t sent = 0;
+  uint32_t last_progress = 0;
+  const uint32_t started_ms = millis();
+  while (remaining > 0) {
+    const size_t want = remaining > sizeof(buf) ? sizeof(buf) : (size_t)remaining;
+    const size_t got = Serial.readBytes(buf, want);
+    if (got == 0) {
+      Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=serial_read sent=%lu remaining=%lu\n",
+                    (unsigned long)sent, (unsigned long)remaining);
+      client.stop();
+      return;
+    }
+
+    size_t written_total = 0;
+    uint32_t write_deadline = millis() + 10000;
+    while (written_total < got) {
+      if (!client.connected()) {
+        Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=wifi_disconnected sent=%lu chunk_offset=%u\n",
+                      (unsigned long)sent, (unsigned)written_total);
+        client.stop();
+        return;
+      }
+      const size_t wrote = client.write(buf + written_total, got - written_total);
+      if (wrote == 0) {
+        if (millis() > write_deadline) {
+          Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=wifi_write_timeout sent=%lu chunk_offset=%u expected=%u\n",
+                        (unsigned long)sent, (unsigned)written_total, (unsigned)got);
+          client.stop();
+          return;
+        }
+        delay(5);
+        yield();
+        continue;
+      }
+      written_total += wrote;
+      write_deadline = millis() + 10000;
+    }
+
+    remaining -= (uint32_t)got;
+    sent += (uint32_t)got;
+    if (sent - last_progress >= 65536 || remaining == 0) {
+      last_progress = sent;
+      Serial.printf("CLUSTER_RELAY_UPDATE_PROGRESS board=%u sent=%lu total=%lu\n",
+                    (unsigned)board, (unsigned long)sent, (unsigned long)firmware_size);
+    }
+    yield();
+  }
+  client.print(suffix);
+  client.flush();
+
+  String status_line;
+  const uint32_t response_deadline = millis() + 20000;
+  while (millis() < response_deadline && client.connected()) {
+    while (client.available()) {
+      String line = client.readStringUntil('\n');
+      line.trim();
+      if (line.length() > 0) {
+        if (status_line.length() == 0) status_line = line;
+        Serial.printf("CLUSTER_RELAY_UPDATE_RESPONSE board=%u line=%s\n", (unsigned)board, line.c_str());
+      }
+    }
+    if (status_line.length() > 0 && !client.connected()) break;
+    delay(10);
+  }
+  while (client.available()) {
+    String line = client.readStringUntil('\n');
+    line.trim();
+    if (line.length() > 0) {
+      if (status_line.length() == 0) status_line = line;
+      Serial.printf("CLUSTER_RELAY_UPDATE_RESPONSE board=%u line=%s\n", (unsigned)board, line.c_str());
+    }
+  }
+  client.stop();
+
+  const bool ok = status_line.startsWith("HTTP/1.1 200") || status_line.startsWith("HTTP/1.0 200");
+  Serial.printf("CLUSTER_RELAY_UPDATE_END board=%u ok=%u status=\"%s\" elapsed_ms=%lu\n",
+                (unsigned)board, ok ? 1 : 0, status_line.c_str(),
+                (unsigned long)(millis() - started_ms));
+}
+
+static void cluster_handle_serial_relay() {
+  if (!Serial.available()) return;
+  String line = Serial.readStringUntil('\n');
+  line.trim();
+  if (line.length() == 0) return;
+
+  uint8_t board = 0;
+  uint32_t firmware_size = 0;
+  if (!cluster_parse_relay_update_command(line, &board, &firmware_size)) {
+    Serial.printf("CLUSTER_RELAY_UPDATE_ERROR phase=parse line=%s\n", line.c_str());
+    return;
+  }
+  Serial.setTimeout(10000);
+  cluster_relay_worker_update(board, firmware_size);
+  Serial.setTimeout(1000);
+}
+#endif
+
 static bool cluster_send_packet(IPAddress ip, uint16_t port, uint8_t msg_type, uint8_t dst_board,
                                 uint32_t seq, const uint8_t *payload = nullptr,
                                 uint16_t payload_len = 0) {
@@ -290,6 +446,11 @@ static int32_t cluster_matmul_compute_dot(uint8_t fixture_id, uint8_t worker_boa
 static void cluster_handle_matmul_result(const cluster_protocol::ClusterPacketHeader &header,
                                          const uint8_t *payload, size_t payload_len) {
 #if CLUSTER_ROLE_COORD && CLUSTER_WIFI_MATMUL_PROOF
+  if (header.src_board < 3) {
+    cluster_worker_ips[header.src_board] = cluster_udp.remoteIP();
+    cluster_worker_ip_known[header.src_board] = true;
+  }
+
   uint8_t fixture_id = 0;
   int32_t dot = 0;
   if (!cluster_protocol::decode_matmul_result_payload(payload, payload_len, &fixture_id, &dot)) {
@@ -370,6 +531,10 @@ static void cluster_handle_udp_packet() {
 
   if (header.msg_type == cluster_protocol::CLUSTER_MSG_PONG) {
 #if CLUSTER_ROLE_COORD
+    if (header.src_board < 3) {
+      cluster_worker_ips[header.src_board] = cluster_udp.remoteIP();
+      cluster_worker_ip_known[header.src_board] = true;
+    }
     Serial.printf("CLUSTER_WIFI_PONG src_board=%u seq=%lu from=%s:%u rssi=%ld\n",
                   (unsigned)header.src_board, (unsigned long)header.seq,
                   cluster_udp.remoteIP().toString().c_str(), cluster_udp.remotePort(), (long)WiFi.RSSI());
@@ -495,6 +660,9 @@ static void cluster_loop_wifi_demo() {
 #endif
 #if CLUSTER_ENABLE_HTTP_UPDATE
   cluster_http_update_server.handleClient();
+#endif
+#if CLUSTER_ROLE_COORD && CLUSTER_ENABLE_HTTP_UPDATE
+  cluster_handle_serial_relay();
 #endif
   cluster_handle_udp_packet();
 

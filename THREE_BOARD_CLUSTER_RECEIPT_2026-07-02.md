@@ -252,6 +252,23 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - brownout check after low-TX flash: `BROWNOUT_RST False`.
   - live worker matmul receipt after flash: `CLUSTER_MATMUL_WORKER board=2 seq=2765 fixture=1 dot=-408 expected=-408 ok=true reply=sent rssi=-43`.
 
+## Coordinator serial relay update path
+
+- 2026-07-03 coordinator serial-to-worker HTTP update relay implemented:
+  - firmware command: `CLUSTER_RELAY_UPDATE board=<1|2> size=<firmware-bytes>` over coordinator USB serial.
+  - host helper: `tools/relay_worker_update.py`.
+  - coordinator learns worker IPs from live UDP PONG/matmul result packets, then streams multipart HTTP `POST /update` to the selected worker on port `8080`.
+  - build verification: `python3 tools/test_cluster_protocol.py` PASS; `python3 -m py_compile tools/*.py` PASS; `pio run -e cluster_worker1_ap_matmul` SUCCESS; `pio run -e cluster_worker2_ap_matmul` SUCCESS; `pio run -e cluster_coord_ap_matmul` SUCCESS.
+  - coordinator USB flash after relay implementation: `python3 tools/flash_cluster_wifi.py --role coord --mode matmul --port /dev/ttyACM0 --execute` SUCCESS.
+  - live cluster verifier after coordinator relay flash: `PASS cluster matmul fixture=1 seq=3 worker1=272 worker2=-408 total=-136; fixture=2 seq=2 worker1=88 worker2=-80 total=8`.
+- Relay proof attempt boundary:
+  - attempted: `python3 tools/relay_worker_update.py --role worker1 --mode matmul --port /dev/ttyACM0 --wait-worker --relay-timeout 240 --execute`.
+  - result: relay reached worker1 and began streaming, then worker disconnected at `sent=7168`.
+  - receipt: `CLUSTER_RELAY_UPDATE_START board=1 ip=192.168.4.2 port=8080 bytes=774320`; `CLUSTER_RELAY_UPDATE_READY_FOR_BYTES board=1 bytes=774320`; `CLUSTER_RELAY_UPDATE_ERROR phase=wifi_disconnected sent=7168 chunk_offset=0`.
+  - root cause found: the original partition table had `otadata` but only one app slot (`app0`), so the worker HTTP `Update.begin(U_FLASH)` path has no OTA destination partition. The HTTP endpoint can be present while still not OTA-capable.
+  - fix committed in artifacts: split app flash into dual 1MiB OTA slots: `app0 ota_0 0x10000 0x100000`, `app1 ota_1 0x110000 0x100000`; firmware still fits (`worker1` 773949 bytes, `worker2` 773945 bytes, `coord` 805917 bytes).
+  - current hardware boundary: coordinator has been USB-flashed with the dual-slot partition table; workers still need one USB flash with the new partition table before future coordinator-relayed OTA updates can succeed. Partition-table changes cannot be installed by the failed single-slot worker OTA path.
+
 ## Phase 3: Shard the existing H256 LSTM model
 
 - [ ] Task 3.1 model shard exporter
