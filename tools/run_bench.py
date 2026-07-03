@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import re
 import subprocess
 import sys
 import time
@@ -22,37 +21,125 @@ def flash(port: str, cwd: Path):
     return p.stdout + p.stderr
 
 
+def _extract_balanced_json(text: str, start: int) -> tuple[str | None, int | None]:
+    """Extract a JSON object from text[start:] with brace-aware scanning.
+
+    Returns (json_text, end_index) or (None, None) if not yet complete.
+    """
+    if start < 0:
+        return None, None
+
+    i = start
+    while i < len(text) and text[i].isspace():
+        i += 1
+    if i >= len(text) or text[i] != "{":
+        return None, None
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for j in range(i, len(text)):
+        ch = text[j]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[i : j + 1], j + 1
+        if depth < 0:
+            return None, None
+
+    return None, None
+
+
+def _extract_bench_receipt(joined: str) -> tuple[str | None, int | None]:
+    marker = "BENCH_RECEIPT "
+    marker_idx = joined.find(marker)
+    if marker_idx < 0:
+        return None, None
+
+    json_text, end = _extract_balanced_json(joined, marker_idx + len(marker))
+    return json_text, end
+
+
+def _test_receipt_parser() -> None:
+    examples = [
+        (
+            'noise\nBENCH_RECEIPT {"tokens_per_sec": 1.2}\nPROOF_DONE\n',
+            '{"tokens_per_sec": 1.2}',
+        ),
+        (
+            'xBENCH_RECEIPT {"a": {"b": [1, {"c": "x"}]}, "d": "we \\"{ braces }\\""} trailing',
+            '{"a": {"b": [1, {"c": "x"}]}, "d": "we \\"{ braces }\\""}',
+        ),
+    ]
+    for raw, expected_json in examples:
+        json_text, _ = _extract_bench_receipt(raw)
+        if json_text != expected_json:
+            raise AssertionError(f"unexpected parse result: {json_text!r} != {expected_json!r}")
+        parsed = json.loads(json_text)
+        assert isinstance(parsed, dict)
+
+
 def monitor_once(port: str, timeout_s: int) -> tuple[str, dict]:
-    code = (
-        "import json, re, serial, sys, time\n"
-        f"ser=serial.Serial({port!r},115200,timeout=0.25)\n"
-        "ser.setDTR(False); ser.setRTS(False); time.sleep(0.1); ser.setRTS(True); time.sleep(0.1); ser.setRTS(False)\n"
-        "deadline=time.time()+" + str(timeout_s) + "\n"
-        "buf=[]\n"
-        "receipt=None\n"
-        "while time.time()<deadline:\n"
-        "    data=ser.read(4096)\n"
-        "    if data:\n"
-        "        txt=data.decode('utf-8','replace')\n"
-        "        sys.stdout.write(txt); sys.stdout.flush()\n"
-        "        buf.append(txt)\n"
-        "        joined=''.join(buf)\n"
-        "        m=re.search(r'BENCH_RECEIPT (\\{.*\\})', joined)\n"
-        "        if m:\n"
-        "            receipt=json.loads(m.group(1)); print('\\n__PARSED_RECEIPT__'+json.dumps(receipt)); break\n"
-        "ser.close()\n"
-        "if receipt is None: sys.exit(2)\n"
-    )
-    p = subprocess.run([sys.executable, "-c", code], text=True, capture_output=True, timeout=timeout_s + 10)
-    raw = p.stdout + p.stderr
-    if p.returncode != 0:
-        raise RuntimeError(f"monitor failed exit={p.returncode}\n{raw}")
-    marker = "__PARSED_RECEIPT__"
-    idx = raw.rfind(marker)
-    if idx < 0:
-        raise RuntimeError("receipt marker missing\n" + raw)
-    receipt_line = raw[idx + len(marker):].strip().splitlines()[0]
-    receipt = json.loads(receipt_line)
+    import serial
+
+    ser = serial.Serial(port, 115200, timeout=0.25)
+    ser.setDTR(False)
+    ser.setRTS(False)
+    time.sleep(0.1)
+    ser.setRTS(True)
+    time.sleep(0.1)
+    ser.setRTS(False)
+    deadline = time.time() + timeout_s
+    buf = []
+    receipt = None
+    receipt_seen_at = None
+    proof_done_seen = False
+    raw = ""
+
+    try:
+        while time.time() < deadline:
+            data = ser.read(4096)
+            if not data:
+                continue
+            txt = data.decode("utf-8", "replace")
+            sys.stdout.write(txt)
+            sys.stdout.flush()
+            buf.append(txt)
+            raw = "".join(buf)
+
+            if receipt_seen_at is None:
+                marker_idx = raw.find("BENCH_RECEIPT ")
+                if marker_idx >= 0:
+                    receipt_seen_at = marker_idx + len("BENCH_RECEIPT ")
+
+            if receipt_seen_at is not None:
+                if not proof_done_seen and "PROOF_DONE" in raw[receipt_seen_at:]:
+                    proof_done_seen = True
+                json_text, _ = _extract_balanced_json(raw, receipt_seen_at)
+                if json_text is not None:
+                    receipt = json.loads(json_text)
+                    break
+                if proof_done_seen:
+                    break
+
+        if receipt is None:
+            raise RuntimeError("balanced receipt JSON not found before timeout or PROOF_DONE")
+    finally:
+        ser.close()
+
     return raw, receipt
 
 
