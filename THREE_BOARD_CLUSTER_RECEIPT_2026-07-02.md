@@ -66,7 +66,7 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - 2026-07-03: `pio run -e cluster_coord` — SUCCESS
   - 2026-07-03: `pio run -e cluster_worker1` — SUCCESS
   - 2026-07-03: `pio run -e cluster_worker2` — SUCCESS
-- [ ] Task 1.3 WiFi worker PING/PONG server proof (UDP)
+- [x] Task 1.3 WiFi worker PING/PONG server proof (UDP)
   - 2026-07-03: Phase 1.3 firmware artifacts prepared, not flashed.
   - Build envs:
     - `cluster_coord_ap_ping`: coordinator board `0`, SoftAP mode, UDP PING broadcast on port `42100`
@@ -152,8 +152,35 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - No-flash status: live Phase 2 hardware proof intentionally not performed during artifact preparation; controller must run coordinator serial verification before marking hardware proof complete.
 - [ ] Task 2.4 int4 sharded matmul fixture
 
+## Phase 2 live hardware proof
+
+- 2026-07-03 coordinator USB flash to OTA-enabled matmul firmware:
+  - command: `python3 tools/flash_cluster_wifi.py --role coord --mode matmul --port /dev/ttyACM0 --execute`
+  - result: SUCCESS
+  - hardware MAC: `94:a9:90:d2:41:f4`
+  - coordinator env: `cluster_coord_ap_matmul`
+- 2026-07-03 live three-board synthetic sharded matmul proof:
+  - verifier command: `python3 tools/verify_cluster_matmul.py --port /dev/ttyACM0 --timeout 90`
+  - verifier result: `PASS cluster matmul seq=3 worker1=272 worker2=-408 total=-136`
+  - coordinator receipt: `CLUSTER_MATMUL_RESULT src_board=1 seq=6 fixture=1 dot=272 expected=272 ok=true`
+  - coordinator receipt: `CLUSTER_MATMUL_RESULT src_board=2 seq=6 fixture=1 dot=-408 expected=-408 ok=true`
+  - coordinator gather: `CLUSTER_MATMUL_GATHER seq=6 worker1=272 worker2=-408 total=-136 expected=-136 ok=true`
+  - result: coordinator AP sent deterministic matmul requests to both workers, gathered both shard results, and matched expected total.
+- OTA upload boundary:
+  - OTA servers are installed on worker1, worker2, and coordinator firmware after USB flashes.
+  - Current laptop network is normal WiFi `192.168.50.181/24`; it cannot route to coordinator AP `192.168.4.x` without joining `RI-ESP-CLUSTER`.
+  - Live OTA upload is not attempted from this session because switching the only WiFi interface to the no-internet cluster AP would likely sever agent connectivity.
+  - OTA host helper remains build/dry-run verified: `tools/ota_cluster_wifi.py`.
+
 ## OTA installation receipts
 
+- 2026-07-03 coordinator USB flash to OTA-enabled matmul firmware:
+  - command: `python3 tools/flash_cluster_wifi.py --role coord --mode matmul --port /dev/ttyACM0 --execute`
+  - result: SUCCESS
+  - hardware MAC: `94:a9:90:d2:41:f4`
+  - boot receipt: `ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=matmul`
+  - WiFi/AP receipt: `CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100`
+  - OTA receipt: `CLUSTER_OTA_READY board_id=0 hostname=ri-esp-cluster-coord ip=192.168.4.1 port=3232`
 - 2026-07-03 worker1 USB flash to OTA-enabled matmul firmware:
   - command: `python3 tools/flash_cluster_wifi.py --role worker1 --mode matmul --port /dev/ttyACM1 --execute`
   - result: SUCCESS
