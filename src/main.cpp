@@ -170,7 +170,7 @@ static void cluster_setup_ota() {
 static bool cluster_send_packet(IPAddress ip, uint16_t port, uint8_t msg_type, uint8_t dst_board,
                                 uint32_t seq, const uint8_t *payload = nullptr,
                                 uint16_t payload_len = 0) {
-  uint8_t packet[256];
+  uint8_t packet[640];
   size_t packet_len = 0;
   if (!cluster_protocol::encode_packet(msg_type, (uint8_t)CLUSTER_BOARD_ID, dst_board, seq,
                                        payload, payload_len, packet, sizeof(packet), &packet_len)) {
@@ -243,14 +243,14 @@ static void cluster_handle_matmul_result(const cluster_protocol::ClusterPacketHe
 static void cluster_handle_udp_packet() {
   int packet_size = cluster_udp.parsePacket();
   if (packet_size <= 0) return;
-  if (packet_size > 256) {
+  if (packet_size > 640) {
     Serial.printf("CLUSTER_WIFI_DROP reason=too_large bytes=%d from=%s:%u\n",
                   packet_size, cluster_udp.remoteIP().toString().c_str(), cluster_udp.remotePort());
     while (cluster_udp.available() > 0) cluster_udp.read();
     return;
   }
 
-  uint8_t packet[256];
+  uint8_t packet[640];
   int read_len = cluster_udp.read(packet, sizeof(packet));
   cluster_protocol::ClusterPacketHeader header;
   const uint8_t *payload = nullptr;
@@ -353,6 +353,7 @@ static void cluster_setup_wifi_demo() {
 #if CLUSTER_ROLE_COORD
 #if CLUSTER_WIFI_AP_MODE
   WiFi.mode(WIFI_AP);
+  WiFi.setSleep(false);
   WiFi.softAPConfig(CLUSTER_AP_IP, CLUSTER_AP_GATEWAY, CLUSTER_AP_NETMASK);
   bool ap_ok = WiFi.softAP(CLUSTER_WIFI_SSID, CLUSTER_WIFI_PASSPHRASE);
   delay(200);
@@ -364,6 +365,7 @@ static void cluster_setup_wifi_demo() {
 #endif
 #elif CLUSTER_ROLE_WORKER
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.begin(CLUSTER_WIFI_SSID, CLUSTER_WIFI_PASSPHRASE);
   Serial.printf("CLUSTER_WIFI_STA_CONNECTING board_id=%u ssid=%s\n", (unsigned)CLUSTER_BOARD_ID,
                 CLUSTER_WIFI_SSID);
