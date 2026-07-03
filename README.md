@@ -284,7 +284,8 @@ Boundary: this is a hardware-verified sharded matmul / sharded output-head / fle
 Full H512 OTA shard plan: `TINYSTORIES_H512_OTA_SHARD_PLAN_2026-07-03.md`.
 Live two-worker data OTA receipt: `TINYSTORIES_H512_DATA_OTA_LIVE_RECEIPT_2026-07-03.md`.
 Live recurrent gate-shard receipt: `TINYSTORIES_H512_LSTM_GATE_SHARD_LIVE_RECEIPT_2026-07-03.md`.
-Live one-token distributed generation receipt: `TINYSTORIES_H512_DISTRIBUTED_GENERATION_LIVE_RECEIPT_2026-07-03.md`. 
+Live one-token distributed generation receipt: `TINYSTORIES_H512_DISTRIBUTED_GENERATION_LIVE_RECEIPT_2026-07-03.md`.
+Final reproduced cluster recheck receipt: `CLUSTER_FINAL_RECHECK_2026-07-03.md`.
 
 ## Related repos
 
