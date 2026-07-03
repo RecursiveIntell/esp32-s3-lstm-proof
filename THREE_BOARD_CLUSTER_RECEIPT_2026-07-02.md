@@ -83,6 +83,10 @@ This deployment plan is intentionally targeted at users with minimal local infra
   - Worker1 join/status receipt: `CLUSTER_WIFI_WORKER_STATUS board_id=1 ip=192.168.4.2 rssi=-55 port=42100`.
   - Worker1 reply receipt: `CLUSTER_WIFI_PING board=1 seq=129 from_board=0 from=192.168.4.1:42100 reply=sent rssi=-56`.
   - Coordinator receive receipt: `CLUSTER_WIFI_PONG src_board=1 seq=136 from=192.168.4.2:42100 rssi=0`.
+  - 2026-07-03 worker2 flash: `python3 tools/flash_cluster_wifi.py --role worker2 --port /dev/ttyACM1 --execute` — SUCCESS.
+  - Worker2 hardware: ESP32-S3 MAC `94:a9:90:d2:40:b0`.
+  - Worker2 reply receipt: `CLUSTER_WIFI_PING board=2 seq=228 from_board=0 from=192.168.4.1:42100 reply=sent rssi=-43`.
+  - Coordinator receive receipt: `CLUSTER_WIFI_PONG src_board=2 seq=229 from=192.168.4.3:42100 rssi=0`.
 - [ ] Task 1.4 two-worker WiFi barrier sync proof (UDP with fallback notes)
 - [ ] Task 1.5 Coordinator AP and OTA provisioning plan
 
