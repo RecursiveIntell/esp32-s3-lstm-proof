@@ -1,0 +1,51 @@
+{
+  "blockers": [],
+  "board": "esp32s3",
+  "compressed_bytes": 1614972,
+  "firmware_variant": "p22_i4_wih_whh_simd_h256",
+  "free_heap_start": 310152,
+  "free_psram_start": 6009619,
+  "heap_after": 310152,
+  "host_observed_at": "2026-07-02T20:12:04-0500",
+  "model_profile": "domain_h256_all_int8",
+  "ms_per_token_mean": 25.31,
+  "ms_per_token_p50": 25,
+  "ms_per_token_p95": 26,
+  "ms_total": 2489,
+  "op_breakdown_ms_per_token": {
+    "activation": 0.619,
+    "core1_wait": 24.211,
+    "embed": 0.045,
+    "fc": 0.186,
+    "lstm_whh": 10.4,
+    "lstm_wih": 10.639,
+    "quant": 0.206,
+    "sram_copy": 0.0
+  },
+  "output_by_seed": {
+    "hot room. action is ": "check airflow.\nt",
+    "missing sensor. action is ": "no claim.\nthe re",
+    "the receipt says ": "stale reading.\nt"
+  },
+  "params": 1595937,
+  "passed": true,
+  "psram_after": 6009619,
+  "psram_size": 8386055,
+  "run_index": 2,
+  "schema": "ri-esp32s3-lstm-bench-v1",
+  "state_alloc": "internal+sram_scratch",
+  "stopped_output_by_seed": {
+    "high heat and humidity. action is ": "escalate.",
+    "hot room. action is ": "check airflow.",
+    "humid room. action is ": "escalate.",
+    "local first means ": "the room can report before the cloud wakes.",
+    "missing sensor. action is ": "no claim.",
+    "normal room. action is ": "log receipt.",
+    "safe action is ": "no claim without evidence.",
+    "stale data. action is ": "wait."
+  },
+  "tokens_per_sec": 39.5062,
+  "tokens_per_seed": 16,
+  "total_measured_tokens": 48,
+  "weights_sha256": "770ed9012099a04abf7aebc7cbbe279abd289b27b181bc364e48ea491d3dbb6c"
+}
