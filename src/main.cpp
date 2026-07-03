@@ -24,7 +24,7 @@ static constexpr int SEED_COUNT = 3;
 static constexpr int TOKENS_PER_SEED = 16;
 static constexpr int MAX_TOKENS = SEED_COUNT * TOKENS_PER_SEED;
 static constexpr const char *BENCH_SCHEMA = "ri-esp32s3-lstm-bench-v1";
-static constexpr const char *FIRMWARE_VARIANT = "p16_sram_dualcore_h256";
+static constexpr const char *FIRMWARE_VARIANT = "p22_i4_wih_whh_simd_h256";
 static constexpr const char *WEIGHTS_SHA256 = "770ed9012099a04abf7aebc7cbbe279abd289b27b181bc364e48ea491d3dbb6c";
 static const char VOCAB[VOCAB_SIZE + 1] = "abcdefghijklmnopqrstuvwxyz .,!?\'\n";
 static const char *BENCH_SEEDS[SEED_COUNT] = {
@@ -91,10 +91,6 @@ struct OpBreakdown {
 ModelView model;
 ResolvedModel resolved;
 OpBreakdown ops;
-
-// SRAM tiling: scratch for recurrent weights — try 4 gates, fallback to 2
-static int8_t *whh_sram = nullptr;
-static size_t whh_sram_bytes = 0;
 
 // Dual-core sync
 static SemaphoreHandle_t core1_start_sem = nullptr;
@@ -178,10 +174,28 @@ static inline int32_t dot_i8_i8_acc(const uint8_t *payload, uint32_t row_start, 
   return acc;
 }
 
+extern "C" int32_t dot_i4_i8_fast_esp32s3(const int8_t *input, const uint8_t *weights_packed, int n);
+
 static inline int32_t dot_i4_i8_acc(const uint8_t *payload, uint32_t elem_row_start, const int8_t *x, int n) {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+  if ((n & 15) == 0 && (((uintptr_t)x) & 15) == 0 && ((elem_row_start & 1) == 0)) {
+    return dot_i4_i8_fast_esp32s3(x, payload + (elem_row_start >> 1), n);
+  }
+#endif
   const uint8_t *packed = payload + (elem_row_start >> 1);
   int32_t acc = 0;
   int j = 0;
+  if (elem_row_start & 1) {
+    // Rare fallback for odd element row starts: first logical element is high nibble.
+    for (; j + 1 < n; j += 2) {
+      uint8_t b0 = packed[j >> 1];
+      uint8_t b1 = packed[(j >> 1) + 1];
+      acc += (int32_t)signed_i4_high(b0) * (int32_t)x[j];
+      acc += (int32_t)signed_i4_low(b1) * (int32_t)x[j + 1];
+    }
+    if (j < n) acc += (int32_t)signed_i4_high(packed[j >> 1]) * (int32_t)x[j];
+    return acc;
+  }
   for (; j + 1 < n; j += 2) {
     uint8_t b = *packed++;
     acc += (int32_t)signed_i4_low(b) * (int32_t)x[j];
@@ -304,6 +318,46 @@ bool clone_payloads_to_psram() {
   return true;
 }
 
+bool convert_wih_to_int4() {
+  uint32_t converted = 0;
+  uint32_t saved = 0;
+  for (uint32_t i = 0; i < model.tensor_count; i++) {
+    Tensor *t = &model.tensors[i];
+    if (strncmp(t->name, "lstm.weight_ih_l", 16) != 0 && strncmp(t->name, "lstm.weight_hh_l", 16) != 0) continue;
+    if (t->dtype != I8 || !t->payload || t->payload_len == 0) continue;
+
+    uint32_t old_len = t->payload_len;
+    uint32_t new_len = (old_len + 1) >> 1;
+    uint8_t *packed = (uint8_t *)heap_caps_aligned_alloc(16, new_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!packed) {
+      Serial.printf("ERR int4 pack failed %s %lu bytes\n", t->name, (unsigned long)new_len);
+      return false;
+    }
+
+    const int8_t *src = (const int8_t *)t->payload;
+    for (uint32_t j = 0; j < old_len; j += 2) {
+      int q0 = (int)lrintf(((float)src[j]) * (7.0f / 127.0f));
+      int q1 = 0;
+      if (j + 1 < old_len) q1 = (int)lrintf(((float)src[j + 1]) * (7.0f / 127.0f));
+      if (q0 > 7) q0 = 7; if (q0 < -8) q0 = -8;
+      if (q1 > 7) q1 = 7; if (q1 < -8) q1 = -8;
+      packed[j >> 1] = (uint8_t)((q0 & 0x0F) | ((q1 & 0x0F) << 4));
+    }
+
+    t->payload = packed;
+    t->payload_len = new_len;
+    t->dtype = I4;
+    t->scale *= (127.0f / 7.0f);
+    converted++;
+    saved += old_len - new_len;
+    Serial.printf("int4 recurrent %s old=%lu new=%lu scale=%g\n", t->name,
+      (unsigned long)old_len, (unsigned long)new_len, (double)t->scale);
+  }
+  Serial.printf("int4 recurrent converted=%lu saved=%lu free_psram=%lu\n",
+    (unsigned long)converted, (unsigned long)saved, (unsigned long)ESP.getFreePsram());
+  return converted == (LAYERS * 2);
+}
+
 bool resolve_model() {
   resolved.embed = find_tensor("embed.weight");
   resolved.fcw = find_tensor("fc.weight");
@@ -366,16 +420,6 @@ void alloc_state() {
   st.gates = (float *)internal_alloc(sizeof(float) * 4 * HIDDEN);
   st.logits = (float *)internal_alloc(sizeof(float) * VOCAB_SIZE);
 
-  // SRAM scratch for recurrent weight tiling
-  // H256: 4*256*256 = 262,144 bytes — should fit in internal SRAM
-  whh_sram_bytes = 4 * HIDDEN * HIDDEN;
-  whh_sram = (int8_t *)heap_caps_aligned_alloc(16, whh_sram_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  if (whh_sram) {
-    Serial.printf("SRAM tiling: enabled %lu bytes\n", (unsigned long)whh_sram_bytes);
-  } else {
-    whh_sram_bytes = 0;
-    Serial.println("SRAM tiling: disabled (alloc failed)");
-  }
 }
 
 void reset_state() {
@@ -428,11 +472,7 @@ static void core0_worker(void *arg) {
       float acc = f32_at(p->bih, g);
       if (p->bhh) acc += f32_at(p->bhh, g);
       acc += dot_tensor_q8(p->wih, (uint32_t)g * p->input_dim, p->qx, p->input_scale, p->input_dim);
-      if (whh_sram) {
-        acc += dot_raw_i8(whh_sram, (uint32_t)g * HIDDEN, p->whh->scale, p->qh, p->h_scale, HIDDEN);
-      } else {
-        acc += dot_tensor_q8(p->whh, (uint32_t)g * HIDDEN, p->qh, p->h_scale, HIDDEN);
-      }
+      acc += dot_tensor_q8(p->whh, (uint32_t)g * HIDDEN, p->qh, p->h_scale, HIDDEN);
       p->gates_out[g] = acc;
     }
 
@@ -450,16 +490,6 @@ void lstm_layer(int layer, const float *input, int input_dim, bool measure) {
   float input_scale = quantize_q8(input, st.qx, input_dim);
   float h_scale = quantize_q8(st.h[layer], st.qh[layer], HIDDEN);
   if (measure) ops.quant_us += (uint32_t)(micros() - tq);
-
-  // SRAM tiling: copy recurrent weights to SRAM scratch
-  uint32_t ts = measure ? micros() : 0;
-  if (whh_sram && whh->dtype == I8) {
-    size_t copy_len = whh->payload_len;
-    if (copy_len > whh_sram_bytes) copy_len = whh_sram_bytes;
-    memcpy(whh_sram, whh->payload, copy_len);
-  }
-  if (measure) ops.sram_copy_us += (uint32_t)(micros() - ts);
-
   // Dual-core: split 4*HIDDEN gates into two halves
   c1p.wih = wih;
   c1p.whh = whh;
@@ -485,11 +515,7 @@ void lstm_layer(int layer, const float *input, int input_dim, bool measure) {
     acc += dot_tensor_q8(wih, (uint32_t)g * input_dim, st.qx, input_scale, input_dim);
     if (measure) ops.lstm_wih_us += (uint32_t)(micros() - t0);
     t0 = measure ? micros() : 0;
-    if (whh_sram) {
-      acc += dot_raw_i8(whh_sram, (uint32_t)g * HIDDEN, whh->scale, st.qh[layer], h_scale, HIDDEN);
-    } else {
-      acc += dot_tensor_q8(whh, (uint32_t)g * HIDDEN, st.qh[layer], h_scale, HIDDEN);
-    }
+    acc += dot_tensor_q8(whh, (uint32_t)g * HIDDEN, st.qh[layer], h_scale, HIDDEN);
     if (measure) ops.lstm_whh_us += (uint32_t)(micros() - t0);
     st.gates[g] = acc;
     if ((g & 255) == 0) yield();
@@ -655,7 +681,7 @@ void run_benchmark() {
   Serial.printf("\"quant\":%.3f,", (ops.quant_us / 1000.0f) / steps);
   Serial.printf("\"lstm_wih\":%.3f,", (ops.lstm_wih_us / 1000.0f) / steps);
   Serial.printf("\"lstm_whh\":%.3f,", (ops.lstm_whh_us / 1000.0f) / steps);
-  Serial.printf("\"sram_copy\":%.3f,", (ops.sram_copy_us / 1000.0f) / steps);
+  Serial.printf("\"sram_copy\":0.000,");
   Serial.printf("\"activation\":%.3f,", (ops.activation_us / 1000.0f) / steps);
   Serial.printf("\"fc\":%.3f,", (ops.fc_us / 1000.0f) / steps);
   Serial.printf("\"core1_wait\":%.3f},", (ops.core1_wait_us / 1000.0f) / steps);
@@ -733,7 +759,7 @@ void poll_serial_language_commands() {
 void setup() {
   Serial.begin(115200);
   delay(1500);
-  Serial.println("\nESP32-S3 LSTM boot p16 sram+dualcore");
+  Serial.println("\nESP32-S3 LSTM boot p22 i4 recurrent SIMD+dualcore");
   Serial.printf("free_heap=%lu free_psram=%lu psram_size=%lu\n",
     (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(), (unsigned long)ESP.getPsramSize());
 
@@ -751,6 +777,7 @@ void setup() {
 
   if (!load_model_partition()) { Serial.println("MODEL_LOAD_FAILED"); return; }
   if (!clone_payloads_to_psram()) { Serial.println("MODEL_CLONE_FAILED"); return; }
+  if (!convert_wih_to_int4()) { Serial.println("MODEL_I4_CONVERT_FAILED"); return; }
   if (!resolve_model()) { Serial.println("MODEL_RESOLVE_FAILED"); return; }
   init_activation_lut();
   alloc_state();
