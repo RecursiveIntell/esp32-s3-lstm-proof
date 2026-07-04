@@ -219,11 +219,11 @@ static bool cluster_matmul_gather_printed = false;
 static bool cluster_model_ready = false;
 #if CLUSTER_WIFI_TCP_DIST && CLUSTER_WIFI_LSTM_SHARD
 #if CLUSTER_ROLE_WORKER
-static WiFiServer cluster_tcp_server(CLUSTER_WIFI_TCP_PORT);
+static WiFiServer *cluster_tcp_server = nullptr;
 static WiFiClient cluster_tcp_worker_client;
 #endif
 #if CLUSTER_ROLE_COORD
-static WiFiClient worker_tcp[3];
+static WiFiClient *worker_tcp[3] = {nullptr, nullptr, nullptr};
 static uint32_t cluster_tcp_last_connect_ms[3] = {0, 0, 0};
 #endif
 #endif
@@ -698,7 +698,7 @@ static bool cluster_send_tcp_packet(WiFiClient &client, uint8_t msg_type, uint8_
                                     uint32_t seq, const uint8_t *payload = nullptr,
                                     uint16_t payload_len = 0) {
   if (!client.connected()) return false;
-  static uint8_t packet[8192];
+  static uint8_t packet[4608];
   size_t packet_len = 0;
   if (!cluster_protocol::encode_packet(msg_type, (uint8_t)CLUSTER_BOARD_ID, dst_board, seq,
                                        payload, payload_len, packet, sizeof(packet), &packet_len)) {
@@ -717,12 +717,14 @@ static bool cluster_send_tcp_packet(WiFiClient &client, uint8_t msg_type, uint8_
 #if CLUSTER_ROLE_COORD
 static bool cluster_tcp_ensure_worker_connected(uint8_t board_id, uint32_t now, bool force = false) {
   if (board_id == 0 || board_id >= 3 || !cluster_worker_ip_known[board_id]) return false;
-  if (worker_tcp[board_id].connected()) return true;
+  if (worker_tcp[board_id] && worker_tcp[board_id]->connected()) return true;
   if (!force && now - cluster_tcp_last_connect_ms[board_id] < 1000) return false;
   cluster_tcp_last_connect_ms[board_id] = now;
-  worker_tcp[board_id].stop();
-  bool ok = worker_tcp[board_id].connect(cluster_worker_ips[board_id], CLUSTER_WIFI_TCP_PORT);
-  Serial.printf("CLUSTER_TCP_CONNECT dst=%u target=%s port=%u ok=%s\n",
+  if (!worker_tcp[board_id]) worker_tcp[board_id] = new WiFiClient();
+  if (worker_tcp[board_id]->connected()) worker_tcp[board_id]->stop();
+  bool ok = worker_tcp[board_id]->connect(cluster_worker_ips[board_id], CLUSTER_WIFI_TCP_PORT);
+  if (ok) worker_tcp[board_id]->setNoDelay(true);
+  Serial.printf("CLUSTER_TCP_CONNECT dst=%u target=%s port=%u ok=%s nodelay=%s\n",
                 (unsigned)board_id, cluster_worker_ips[board_id].toString().c_str(),
                 (unsigned)CLUSTER_WIFI_TCP_PORT, ok ? "true" : "false");
   return ok;
@@ -731,7 +733,7 @@ static bool cluster_tcp_ensure_worker_connected(uint8_t board_id, uint32_t now, 
 static bool cluster_send_tcp_packet(uint8_t board_id, uint8_t msg_type, uint32_t seq,
                                     const uint8_t *payload = nullptr, uint16_t payload_len = 0) {
   if (!cluster_tcp_ensure_worker_connected(board_id, millis())) return false;
-  return cluster_send_tcp_packet(worker_tcp[board_id], msg_type, board_id, seq, payload, payload_len);
+  return cluster_send_tcp_packet(*worker_tcp[board_id], msg_type, board_id, seq, payload, payload_len);
 }
 #endif
 
@@ -777,7 +779,7 @@ static void cluster_handle_lstm_gate_request_tcp(WiFiClient &client,
 
 static bool cluster_handle_tcp_packet(WiFiClient &client, uint8_t peer_board) {
   if (!client.connected() || client.available() < (int)cluster_protocol::CLUSTER_PACKET_HEADER_SIZE) return false;
-  static uint8_t packet[8192];
+  static uint8_t packet[4608];
   if (!cluster_tcp_read_exact(client, packet, cluster_protocol::CLUSTER_PACKET_HEADER_SIZE)) {
     Serial.printf("CLUSTER_TCP_DROP reason=short_header peer=%u\n", (unsigned)peer_board);
     client.stop();
@@ -833,13 +835,16 @@ static bool cluster_handle_tcp_packet(WiFiClient &client, uint8_t peer_board) {
 
 static void cluster_handle_tcp_io(uint32_t now) {
 #if CLUSTER_ROLE_WORKER
-  WiFiClient incoming = cluster_tcp_server.available();
-  if (incoming) {
-    if (cluster_tcp_worker_client && cluster_tcp_worker_client.connected()) cluster_tcp_worker_client.stop();
-    cluster_tcp_worker_client = incoming;
-    Serial.printf("CLUSTER_TCP_ACCEPT board=%u remote=%s port=%u\n",
-                  (unsigned)CLUSTER_BOARD_ID, cluster_tcp_worker_client.remoteIP().toString().c_str(),
-                  (unsigned)CLUSTER_WIFI_TCP_PORT);
+  if (cluster_tcp_server) {
+    WiFiClient incoming = cluster_tcp_server->available();
+    if (incoming) {
+      if (cluster_tcp_worker_client && cluster_tcp_worker_client.connected()) cluster_tcp_worker_client.stop();
+      cluster_tcp_worker_client = incoming;
+      cluster_tcp_worker_client.setNoDelay(true);
+      Serial.printf("CLUSTER_TCP_ACCEPT board=%u remote=%s port=%u nodelay=true\n",
+                    (unsigned)CLUSTER_BOARD_ID, cluster_tcp_worker_client.remoteIP().toString().c_str(),
+                    (unsigned)CLUSTER_WIFI_TCP_PORT);
+    }
   }
   if (cluster_tcp_worker_client && cluster_tcp_worker_client.connected()) {
     while (cluster_tcp_worker_client.available() >= (int)cluster_protocol::CLUSTER_PACKET_HEADER_SIZE) {
@@ -847,11 +852,13 @@ static void cluster_handle_tcp_io(uint32_t now) {
     }
   }
 #elif CLUSTER_ROLE_COORD
-  for (uint8_t board_id = 1; board_id <= 2; board_id++) {
-    if (cluster_worker_ip_known[board_id]) cluster_tcp_ensure_worker_connected(board_id, now);
-    if (worker_tcp[board_id].connected()) {
-      while (worker_tcp[board_id].available() >= (int)cluster_protocol::CLUSTER_PACKET_HEADER_SIZE) {
-        if (!cluster_handle_tcp_packet(worker_tcp[board_id], board_id)) break;
+  if (cluster_model_ready && cluster_worker_ip_known[1] && cluster_worker_ip_known[2]) {
+    for (uint8_t board_id = 1; board_id <= 2; board_id++) {
+      if (cluster_worker_ip_known[board_id]) cluster_tcp_ensure_worker_connected(board_id, now);
+      if (worker_tcp[board_id] && worker_tcp[board_id]->connected()) {
+        while (worker_tcp[board_id]->available() >= (int)cluster_protocol::CLUSTER_PACKET_HEADER_SIZE) {
+          if (!cluster_handle_tcp_packet(*worker_tcp[board_id], board_id)) break;
+        }
       }
     }
   }
@@ -1254,7 +1261,8 @@ static void cluster_setup_wifi_demo() {
   }
 
 #if CLUSTER_WIFI_TCP_DIST && CLUSTER_WIFI_LSTM_SHARD && CLUSTER_ROLE_WORKER
-  cluster_tcp_server.begin();
+  cluster_tcp_server = new WiFiServer(CLUSTER_WIFI_TCP_PORT);
+  cluster_tcp_server->begin();
   Serial.printf("CLUSTER_TCP_SERVER_READY board_id=%u port=%u\n", (unsigned)CLUSTER_BOARD_ID,
                 (unsigned)CLUSTER_WIFI_TCP_PORT);
 #endif
