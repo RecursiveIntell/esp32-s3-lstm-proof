@@ -1,0 +1,354 @@
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=lstm_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100
+CLUSTER_WIFI_UDP_READY board_id=0 port=42100
+CLUSTER_OTA_READY board_id=0 hostname=ri-esp-cluster-coord ip=192.168.4.1 port=3232
+CLUSTER_HTTP_UPDATE_READY board_id=0 ip=192.168.4.1 port=8080 endpoint=/update data_endpoint=/update_weights
+weights partition addr=0x210000 size=5242880
+RILM version=1 tensors=15
+payloads cloned bytes=4784772 free_heap=191880 free_psram=3633283
+int4 recurrent lstm.weight_hh_l0 old=1048576 new=524288 scale=0.11046
+int4 recurrent lstm.weight_hh_l1 old=1048576 new=524288 scale=0.141142
+int4 recurrent lstm.weight_hh_l2 old=1048576 new=524288 scale=0.127179
+int4 recurrent converted=3 saved=1572864 free_psram=2060371
+CLUSTER_MODEL_READY board_id=0 ok=1 role=coord
+CLUSTER_WIFI_PING_BROADCAST seq=1 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=1 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=1 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=2 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=2 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=2 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=3 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=3 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=3 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=4 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=4 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=4 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=5 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=5 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=5 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_START prompt="once upon a " final_input=  expected_token=19 expected_char=t
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1000 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1000 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1000 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_PING_BROADCAST seq=6 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PONG src_board=1 seq=6 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=6 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_PING_BROADCAST seq=7 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=7 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=7 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1000 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1001 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1001 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1001 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=8 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=8 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=8 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=9 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=9 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1001 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1002 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1002 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1002 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_PONG src_board=2 seq=9 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_PING_BROADCAST seq=10 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=10 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=10 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1002 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1003 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1003 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1003 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=11 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=11 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=11 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=12 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=12 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=12 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1003 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1004 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1004 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1004 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=13 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=13 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=13 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1004 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1005 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1005 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1005 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=14 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=14 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=14 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=15 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=15 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=15 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1005 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1006 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1006 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1006 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=16 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=16 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=16 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1006 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1007 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1007 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1007 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=17 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=17 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=17 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=18 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=18 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=18 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1007 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1008 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1008 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1008 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=19 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=19 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=19 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1008 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1009 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1009 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1009 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=20 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=20 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=20 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=21 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=21 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=21 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1009 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1010 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1010 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1010 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=22 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=22 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=22 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1010 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1011 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1011 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1011 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=23 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=23 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=23 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=24 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=24 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=24 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1011 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1012 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1012 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1012 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=25 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=25 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=25 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1012 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1013 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1013 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1013 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=26 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=26 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=26 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=27 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=27 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=27 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1013 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1014 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1014 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1014 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=28 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=28 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=28 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1014 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1015 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1015 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1015 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_PING_BROADCAST seq=29 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=29 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=29 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=30 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=30 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=30 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1015 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1016 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1016 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1016 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=31 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=31 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=31 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1016 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1017 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1017 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1017 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=32 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=32 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=32 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=33 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=33 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=33 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1017 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1018 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1018 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1018 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=34 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=34 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=34 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1018 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1019 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1019 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1019 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=35 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=35 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=35 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=36 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=36 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=36 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1019 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1020 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1020 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1020 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=37 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=37 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=37 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1020 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1021 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1021 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1021 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=38 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=38 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=38 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=39 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=39 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=39 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1021 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1022 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1022 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1022 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=40 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=40 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=40 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1022 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1023 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1023 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1023 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=41 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=41 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=41 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=42 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=42 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=42 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1023 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1024 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1024 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1024 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=43 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=43 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=43 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RETRY seq=1024 layer=0 offset=0 seen1=0 seen2=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1025 layer=0 offset=0 count=384 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1025 dst=1 row_start=0 count=384 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1025 dst=2 row_start=1024 count=384 target=192.168.4.2 sent=true
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.3:42100
+CLUSTER_WIFI_DROP reason=decode_1 bytes=1460 from=192.168.4.2:42100
+CLUSTER_WIFI_DROP reason=decode_2 bytes=97 from=192.168.4.2:42100
+CLUSTER_WIFI_PING_BROADCAST seq=44 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=44 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=44 from=192.168.4.2:42100 rssi=0 model_ready=1
