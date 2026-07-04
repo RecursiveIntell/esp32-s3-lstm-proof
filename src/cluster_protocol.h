@@ -380,7 +380,7 @@ static constexpr size_t CLUSTER_FC_RESULT_PAYLOAD_SIZE = 1 + 1 + 4 + 1 + 1;
 static constexpr size_t CLUSTER_LSTM_HIDDEN = 512;
 static constexpr size_t CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE = 1 + 2 + 2 + 4 + 4 + CLUSTER_LSTM_HIDDEN + CLUSTER_LSTM_HIDDEN;
 static constexpr size_t CLUSTER_LSTM_GATE_RESULT_HEADER_SIZE = 1 + 2 + 2;
-static constexpr size_t CLUSTER_LSTM_GATE_RESULT_MAX_VALUES = 120;
+static constexpr size_t CLUSTER_LSTM_GATE_RESULT_MAX_VALUES = 1024;
 static constexpr size_t CLUSTER_LSTM_GATE_RESULT_MAX_PAYLOAD_SIZE = CLUSTER_LSTM_GATE_RESULT_HEADER_SIZE + (CLUSTER_LSTM_GATE_RESULT_MAX_VALUES * 4);
 
 static inline bool encode_lstm_gate_request_payload(uint8_t layer, uint16_t row_start, uint16_t count,

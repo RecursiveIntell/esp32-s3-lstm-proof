@@ -26,7 +26,7 @@ MATMUL_FIXTURE_INT8_ID = 1
 MATMUL_FIXTURE_INT4_ID = 2
 MATMUL_VECTOR_LEN = 16
 LSTM_HIDDEN = 512
-LSTM_GATE_RESULT_MAX_VALUES = 120
+LSTM_GATE_RESULT_MAX_VALUES = 1024
 
 
 class ProtocolError(ValueError):
@@ -183,19 +183,20 @@ def decode_matmul_result_payload(payload: bytes) -> tuple[int, int]:
 
 
 
-def encode_lstm_gate_request_payload(layer: int, input_scale: float, h_scale: float, qx: bytes, qh: bytes) -> bytes:
+def encode_lstm_gate_request_payload(layer: int, row_start: int, count: int, input_scale: float, h_scale: float, qx: bytes, qh: bytes) -> bytes:
     if len(qx) != LSTM_HIDDEN or len(qh) != LSTM_HIDDEN:
         raise ValueError("bad q vector length")
-    return struct.pack("<Bff", layer, input_scale, h_scale) + qx + qh
+    return struct.pack("<BHHff", layer, row_start, count, input_scale, h_scale) + qx + qh
 
 
-def decode_lstm_gate_request_payload(payload: bytes) -> tuple[int, float, float, bytes, bytes]:
-    if len(payload) != 1 + 4 + 4 + LSTM_HIDDEN + LSTM_HIDDEN:
-        raise ProtocolError("bad lstm gate request length")
-    layer, input_scale, h_scale = struct.unpack("<Bff", payload[:9])
-    qx = payload[9:9 + LSTM_HIDDEN]
-    qh = payload[9 + LSTM_HIDDEN:]
-    return layer, input_scale, h_scale, qx, qh
+def decode_lstm_gate_request_payload(payload: bytes) -> tuple[int, int, int, float, float, bytes, bytes]:
+    expected = 1 + 2 + 2 + 4 + 4 + LSTM_HIDDEN + LSTM_HIDDEN
+    if len(payload) != expected:
+        raise ProtocolError(f"bad lstm gate request length: {len(payload)} != {expected}")
+    layer, row_start, count, input_scale, h_scale = struct.unpack("<BHHff", payload[:13])
+    qx = payload[13:13 + LSTM_HIDDEN]
+    qh = payload[13 + LSTM_HIDDEN:]
+    return layer, row_start, count, input_scale, h_scale, qx, qh
 
 
 def encode_lstm_gate_result_payload(layer: int, row_start: int, values: list[int]) -> bytes:
@@ -414,6 +415,63 @@ def test_benchmark_result_payloads() -> None:
     }
 
 
+def test_lstm_gate_payloads() -> None:
+    qx = bytes((i % 256 for i in range(LSTM_HIDDEN)))
+    qh = bytes(((255 - i) % 256 for i in range(LSTM_HIDDEN)))
+    payload = encode_lstm_gate_request_payload(2, 480, 64, 0.25, 0.5, qx, qh)
+    packet = encode_packet(LSTM_GATE_REQUEST, src_board=0, dst_board=1, seq=44, payload=payload)
+    header, decoded = decode_packet(packet)
+    layer, row_start, count, input_scale, h_scale, got_qx, got_qh = decode_lstm_gate_request_payload(decoded)
+    assert header["msg_type"] == LSTM_GATE_REQUEST
+    assert layer == 2
+    assert row_start == 480
+    assert count == 64
+    assert abs(input_scale - 0.25) < 1e-6
+    assert abs(h_scale - 0.5) < 1e-6
+    assert got_qx == qx
+    assert got_qh == qh
+
+    values = [(i - 60) * 4096 for i in range(64)]
+    result = encode_lstm_gate_result_payload(1, 480, values)
+    packet = encode_packet(LSTM_GATE_RESULT, src_board=1, dst_board=0, seq=45, payload=result)
+    header, decoded = decode_packet(packet)
+    layer, row_start, got_values = decode_lstm_gate_result_payload(decoded)
+    assert header["msg_type"] == LSTM_GATE_RESULT
+    assert layer == 1
+    assert row_start == 480
+    assert got_values == values
+
+
+def test_large_chunk_1024_rows() -> None:
+    values = [((i * 7) - 3500) * 1024 for i in range(1024)]
+    result = encode_lstm_gate_result_payload(0, 0, values)
+    assert len(result) == 5 + 4 * 1024
+    packet = encode_packet(LSTM_GATE_RESULT, src_board=1, dst_board=0, seq=100, payload=result)
+    assert len(packet) == 16 + 5 + 4 * 1024
+    header, decoded = decode_packet(packet)
+    assert header["payload_len"] == len(result)
+    layer, row_start, got_values = decode_lstm_gate_result_payload(decoded)
+    assert layer == 0
+    assert row_start == 0
+    assert len(got_values) == 1024
+    assert got_values == values
+
+
+def test_lstm_gate_request_with_large_count() -> None:
+    qx = bytes(i % 256 for i in range(512))
+    qh = bytes((255 - i) % 256 for i in range(512))
+    payload = encode_lstm_gate_request_payload(0, 0, 1024, 0.01, 0.02, qx, qh)
+    packet = encode_packet(LSTM_GATE_REQUEST, src_board=0, dst_board=1, seq=50, payload=payload)
+    assert len(packet) == 16 + len(payload)
+    header, decoded = decode_packet(packet)
+    layer, row_start, count, input_scale, h_scale, got_qx, got_qh = decode_lstm_gate_request_payload(decoded)
+    assert layer == 0
+    assert row_start == 0
+    assert count == 1024
+    assert got_qx == qx
+    assert got_qh == qh
+
+
 def main() -> None:
     test_ping_empty_payload()
     test_payload_roundtrip()
@@ -424,33 +482,11 @@ def main() -> None:
     test_matmul_int4_fixture_math()
     test_fc_shard_payloads()
     test_benchmark_result_payloads()
+    test_lstm_gate_payloads()
+    test_large_chunk_1024_rows()
+    test_lstm_gate_request_with_large_count()
     print("PASS packet encode/decode/crc")
 
 
 if __name__ == "__main__":
     main()
-
-
-def test_lstm_gate_payloads() -> None:
-    qx = bytes((i % 256 for i in range(LSTM_HIDDEN)))
-    qh = bytes(((255 - i) % 256 for i in range(LSTM_HIDDEN)))
-    payload = encode_lstm_gate_request_payload(2, 480, 16, 0.25, 0.5, qx, qh)
-    packet = encode_packet(LSTM_GATE_REQUEST, src_board=0, dst_board=1, seq=44, payload=payload)
-    header, decoded = decode_packet(packet)
-    layer, input_scale, h_scale, got_qx, got_qh = decode_lstm_gate_request_payload(decoded)
-    assert header["msg_type"] == LSTM_GATE_REQUEST
-    assert layer == 2
-    assert abs(input_scale - 0.25) < 1e-6
-    assert abs(h_scale - 0.5) < 1e-6
-    assert got_qx == qx
-    assert got_qh == qh
-
-    values = [(i - 60) * 4096 for i in range(LSTM_GATE_RESULT_MAX_VALUES)]
-    result = encode_lstm_gate_result_payload(1, 480, values)
-    packet = encode_packet(LSTM_GATE_RESULT, src_board=1, dst_board=0, seq=45, payload=result)
-    header, decoded = decode_packet(packet)
-    layer, row_start, got_values = decode_lstm_gate_result_payload(decoded)
-    assert header["msg_type"] == LSTM_GATE_RESULT
-    assert layer == 1
-    assert row_start == 480
-    assert got_values == values

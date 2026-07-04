@@ -643,7 +643,7 @@ static void cluster_handle_serial_relay() {
 static bool cluster_send_packet(IPAddress ip, uint16_t port, uint8_t msg_type, uint8_t dst_board,
                                 uint32_t seq, const uint8_t *payload = nullptr,
                                 uint16_t payload_len = 0) {
-  uint8_t packet[1200];
+  static uint8_t packet[4096];
   size_t packet_len = 0;
   if (!cluster_protocol::encode_packet(msg_type, (uint8_t)CLUSTER_BOARD_ID, dst_board, seq,
                                        payload, payload_len, packet, sizeof(packet), &packet_len)) {
@@ -777,14 +777,14 @@ static void cluster_handle_fc_shard_result(const cluster_protocol::ClusterPacket
 static void cluster_handle_udp_packet() {
   int packet_size = cluster_udp.parsePacket();
   if (packet_size <= 0) return;
-  if (packet_size > 1200) {
+  if (packet_size > 4096) {
     Serial.printf("CLUSTER_WIFI_DROP reason=too_large bytes=%d from=%s:%u\n",
                   packet_size, cluster_udp.remoteIP().toString().c_str(), cluster_udp.remotePort());
     while (cluster_udp.available() > 0) cluster_udp.read();
     return;
   }
 
-  uint8_t packet[1200];
+  static uint8_t packet[4096];
   int read_len = cluster_udp.read(packet, sizeof(packet));
   cluster_protocol::ClusterPacketHeader header;
   const uint8_t *payload = nullptr;
@@ -929,11 +929,11 @@ static void cluster_handle_udp_packet() {
       }
       uint16_t row_start = 0;
       uint16_t count = 0;
-      int32_t values[32];
+      static int32_t values[cluster_protocol::CLUSTER_LSTM_GATE_RESULT_MAX_VALUES];
       bool computed = cluster_model_ready && cluster_worker_compute_lstm_gate_probe(layer, row_start_req, count_req,
                                                                                     qx, input_scale, qh, h_scale,
                                                                                     &row_start, values, &count);
-      uint8_t result_payload[cluster_protocol::CLUSTER_LSTM_GATE_RESULT_MAX_PAYLOAD_SIZE];
+      static uint8_t result_payload[cluster_protocol::CLUSTER_LSTM_GATE_RESULT_MAX_PAYLOAD_SIZE];
       size_t result_payload_len = 0;
       bool encoded = computed && cluster_protocol::encode_lstm_gate_result_payload(
                                      layer, row_start, values, count, result_payload,
@@ -2084,7 +2084,7 @@ static void cluster_dist_prepare_prefix_and_expected() {
 
 static bool cluster_dist_send_pair() {
   if (!cluster_dist_active || cluster_dist_layer >= LAYERS || cluster_dist_offset >= 1024) return false;
-  const uint16_t count = (uint16_t)min((uint16_t)64, (uint16_t)(1024 - cluster_dist_offset));
+  const uint16_t count = (uint16_t)min((uint16_t)256, (uint16_t)(1024 - cluster_dist_offset));
   cluster_lstm_gate_input_scale = quantize_q8(st.x, cluster_lstm_gate_qx, HIDDEN);
   cluster_lstm_gate_h_scale = quantize_q8(st.h[cluster_dist_layer], cluster_lstm_gate_qh, HIDDEN);
   cluster_dist_active_seq = cluster_dist_seq++;
@@ -2147,7 +2147,7 @@ static void cluster_dist_finish_layer() {
 
 static void cluster_dist_advance_or_finish() {
   if (!cluster_dist_active || cluster_dist_waiting) return;
-  cluster_dist_offset += (uint16_t)min((uint16_t)64, (uint16_t)(1024 - cluster_dist_offset));
+  cluster_dist_offset += (uint16_t)min((uint16_t)256, (uint16_t)(1024 - cluster_dist_offset));
   if (cluster_dist_offset >= 1024) {
     cluster_dist_finish_layer();
     cluster_dist_layer++;
@@ -2203,7 +2203,7 @@ static void cluster_handle_lstm_gate_result(const cluster_protocol::ClusterPacke
   uint8_t layer = 0;
   uint16_t row_start = 0;
   uint16_t count = 0;
-  int32_t values[cluster_protocol::CLUSTER_LSTM_GATE_RESULT_MAX_VALUES];
+  static int32_t values[cluster_protocol::CLUSTER_LSTM_GATE_RESULT_MAX_VALUES];
   if (!cluster_protocol::decode_lstm_gate_result_payload(payload, payload_len, &layer, &row_start, values, &count)) {
     Serial.printf("CLUSTER_LSTM_GATE_RESULT_DROP reason=bad_payload src_board=%u seq=%lu\n",
                   (unsigned)header.src_board, (unsigned long)header.seq);
