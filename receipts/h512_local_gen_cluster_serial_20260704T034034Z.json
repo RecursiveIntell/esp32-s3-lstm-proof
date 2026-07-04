@@ -1,0 +1,47 @@
+{
+  "aggregate_chars_per_sec": 34.78260869565217,
+  "boards": [
+    0,
+    1,
+    2
+  ],
+  "claim_boundary": "Aggregate chars/s across independent ESP32-S3 local generator workers; not a single-stream latency or universal BPE-token/s claim. Latest receipt per board is used.",
+  "elapsed_ms_wall": 1380,
+  "generated_chars_total": 48,
+  "per_board_chars_per_sec": {
+    "0": 11.594202898550725,
+    "1": 11.627906976744185,
+    "2": 11.627906976744185
+  },
+  "result_count": 3,
+  "results": [
+    {
+      "board": 0,
+      "chars_per_sec": 11.5942,
+      "checksum": 1380901472,
+      "elapsed_ms": 1380,
+      "generated_chars": 16,
+      "profile": "tinystories_h512_mixed_lstm_safe",
+      "prompt_id": 0
+    },
+    {
+      "board": 1,
+      "chars_per_sec": 11.6279,
+      "checksum": 3481156147,
+      "elapsed_ms": 1376,
+      "generated_chars": 16,
+      "profile": "tinystories_h512_mixed_lstm_safe",
+      "prompt_id": 1
+    },
+    {
+      "board": 2,
+      "chars_per_sec": 11.6279,
+      "checksum": 3254733805,
+      "elapsed_ms": 1376,
+      "generated_chars": 16,
+      "profile": "tinystories_h512_mixed_lstm_safe",
+      "prompt_id": 2
+    }
+  ],
+  "schema": "ri-esp32s3-cluster-aggregate-bench-v1"
+}

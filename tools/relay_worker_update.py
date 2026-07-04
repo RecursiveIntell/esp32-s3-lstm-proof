@@ -30,6 +30,10 @@ ROLE_ENVS = {
         "worker1": "cluster_worker1_ap_local_gen",
         "worker2": "cluster_worker2_ap_local_gen",
     },
+    "local_gen_h512": {
+        "worker1": "cluster_worker1_ap_local_gen_h512",
+        "worker2": "cluster_worker2_ap_local_gen_h512",
+    },
 }
 
 

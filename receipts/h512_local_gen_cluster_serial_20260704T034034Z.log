@@ -1,0 +1,12 @@
+CLUSTER_BENCH_RESULT board=2 prompt_id=2 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1376 chars_per_sec=11.6279 checksum=0xc1ff4bed
+CLUSTER_BENCH_RESULT board=1 prompt_id=1 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1376 chars_per_sec=11.6279 checksum=0xcf7e3a33
+CLUSTER_BENCH_RESULT board=0 prompt_id=0 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1380 chars_per_sec=11.5942 checksum=0x524ee260 output="time there was a"
+CLUSTER_BENCH_RESULT board=2 prompt_id=2 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1375 chars_per_sec=11.6364 checksum=0xc1ff4bed
+CLUSTER_BENCH_RESULT board=1 prompt_id=1 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1376 chars_per_sec=11.6279 checksum=0xcf7e3a33
+CLUSTER_BENCH_RESULT board=0 prompt_id=0 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1380 chars_per_sec=11.5942 checksum=0x524ee260 output="time there was a"
+CLUSTER_BENCH_RESULT board=2 prompt_id=2 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1376 chars_per_sec=11.6279 checksum=0xc1ff4bed
+CLUSTER_BENCH_RESULT board=1 prompt_id=1 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1377 chars_per_sec=11.6195 checksum=0xcf7e3a33
+CLUSTER_BENCH_RESULT board=0 prompt_id=0 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1380 chars_per_sec=11.5942 checksum=0x524ee260 output="time there was a"
+CLUSTER_BENCH_RESULT board=2 prompt_id=2 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1376 chars_per_sec=11.6279 checksum=0xc1ff4bed
+CLUSTER_BENCH_RESULT board=1 prompt_id=1 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1376 chars_per_sec=11.6279 checksum=0xcf7e3a33
+CLUSTER_BENCH_RESULT board=0 prompt_id=0 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1380 chars_per_sec=11.5942 checksum=0x524ee260 output="time there was a"
