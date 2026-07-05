@@ -26,10 +26,15 @@
 #ifndef CLUSTER_WIFI_LSTM_SHARD
 #define CLUSTER_WIFI_LSTM_SHARD 0
 #endif
+#ifndef CLUSTER_WIFI_LAYER_SHARD
+#define CLUSTER_WIFI_LAYER_SHARD 0
+#endif
 #ifndef CLUSTER_WIFI_LOCAL_GENERATOR
 #define CLUSTER_WIFI_LOCAL_GENERATOR 0
 #endif
-#define CLUSTER_WIFI_DEMO (CLUSTER_WIFI_PING_ONLY || CLUSTER_WIFI_MATMUL_PROOF || CLUSTER_WIFI_SHARDED_INFERENCE || CLUSTER_WIFI_LSTM_SHARD || CLUSTER_WIFI_LOCAL_GENERATOR)
+#ifndef CLUSTER_WIFI_DEMO
+#define CLUSTER_WIFI_DEMO (CLUSTER_WIFI_PING_ONLY || CLUSTER_WIFI_MATMUL_PROOF || CLUSTER_WIFI_SHARDED_INFERENCE || CLUSTER_WIFI_LSTM_SHARD || CLUSTER_WIFI_LAYER_SHARD || CLUSTER_WIFI_LOCAL_GENERATOR)
+#endif
 #ifndef CLUSTER_BOARD_ID
 #define CLUSTER_BOARD_ID 0
 #endif
@@ -360,7 +365,9 @@ static void cluster_setup_http_update() {
 #else
              "unknown",
 #endif
-#if CLUSTER_WIFI_LSTM_SHARD
+#if CLUSTER_WIFI_LAYER_SHARD
+             "layer_shard",
+#elif CLUSTER_WIFI_LSTM_SHARD
              "lstm_shard",
 #elif CLUSTER_WIFI_LOCAL_GENERATOR
              "local_generator",
@@ -1180,6 +1187,56 @@ static void cluster_handle_udp_packet() {
     return;
   }
 
+  if (header.msg_type == cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_REQUEST) {
+#if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_LAYER_SHARD
+    if (header.dst_board == CLUSTER_BROADCAST_BOARD || header.dst_board == (uint8_t)CLUSTER_BOARD_ID) {
+      cluster_protocol::ClusterLstmStateForwardRequest request;
+      if (!cluster_protocol::decode_lstm_state_forward_request_payload(payload, payload_len, &request)) {
+        Serial.printf("CLUSTER_LAYER_SHARD_DROP reason=bad_state_request_payload src_board=%u seq=%lu\n",
+                      (unsigned)header.src_board, (unsigned long)header.seq);
+        return;
+      }
+      Serial.printf("CLUSTER_LAYER_SHARD_STATE_REQUEST board_id=%u seq=%lu token=%u layer_start=%u layer_count=%u decoded=true\n",
+                    (unsigned)CLUSTER_BOARD_ID, (unsigned long)header.seq, (unsigned)request.token_id,
+                    (unsigned)request.layer_start, (unsigned)request.layer_count);
+
+      cluster_protocol::ClusterLstmStateForwardResult result;
+      result.layer_end = (uint8_t)(request.layer_start + request.layer_count);
+      result.hidden_scale = request.hidden_scale;
+      result.cell_scale = request.cell_scale;
+      result.qx = request.qx;
+      result.qc = request.qc;
+      static uint8_t result_payload[cluster_protocol::CLUSTER_LSTM_STATE_FORWARD_RESULT_PAYLOAD_SIZE];
+      bool encoded = cluster_protocol::encode_lstm_state_forward_result_payload(
+          result, result_payload, sizeof(result_payload));
+      bool ok = encoded && cluster_send_packet(cluster_udp.remoteIP(), cluster_udp.remotePort(),
+                                               cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_RESULT,
+                                               header.src_board, header.seq, result_payload,
+                                               sizeof(result_payload));
+      if (!ok) {
+        Serial.printf("CLUSTER_LAYER_SHARD_DROP reason=state_result_send_failed board_id=%u seq=%lu encoded=%s\n",
+                      (unsigned)CLUSTER_BOARD_ID, (unsigned long)header.seq,
+                      encoded ? "true" : "false");
+      }
+    }
+#endif
+    return;
+  }
+
+  if (header.msg_type == cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_RESULT) {
+#if CLUSTER_ROLE_COORD && CLUSTER_WIFI_LAYER_SHARD
+    cluster_protocol::ClusterLstmStateForwardResult result;
+    if (!cluster_protocol::decode_lstm_state_forward_result_payload(payload, payload_len, &result)) {
+      Serial.printf("CLUSTER_LAYER_SHARD_DROP reason=bad_state_result_payload src_board=%u seq=%lu\n",
+                    (unsigned)header.src_board, (unsigned long)header.seq);
+      return;
+    }
+    Serial.printf("CLUSTER_LAYER_SHARD_STATE_RESULT src_board=%u seq=%lu layer_end=%u decoded=true\n",
+                  (unsigned)header.src_board, (unsigned long)header.seq, (unsigned)result.layer_end);
+#endif
+    return;
+  }
+
   if (header.msg_type == cluster_protocol::CLUSTER_MSG_BENCH_RESULT) {
 #if CLUSTER_ROLE_COORD && CLUSTER_WIFI_LOCAL_GENERATOR
     cluster_protocol::ClusterBenchResult result;
@@ -1214,7 +1271,9 @@ static void cluster_setup_wifi_demo() {
                 "unknown"
 #endif
                 ,
-#if CLUSTER_WIFI_LSTM_SHARD
+#if CLUSTER_WIFI_LAYER_SHARD
+                "layer_shard"
+#elif CLUSTER_WIFI_LSTM_SHARD
                 "lstm_shard"
 #elif CLUSTER_WIFI_LOCAL_GENERATOR
                 "local_generator"
