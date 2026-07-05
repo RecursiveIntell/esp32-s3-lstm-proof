@@ -51,6 +51,8 @@ def test_main_layer_shard_scaffold_markers():
         "CLUSTER_MSG_LSTM_STATE_FORWARD_RESULT",
         "CLUSTER_LAYER_SHARD_STATE_REQUEST",
         "CLUSTER_LAYER_SHARD_STATE_RESULT",
+        "cluster_layer_shard_smoke_tick",
+        "CLUSTER_LAYER_SHARD_STATE_SEND",
     ):
         assert marker in main_cpp
 

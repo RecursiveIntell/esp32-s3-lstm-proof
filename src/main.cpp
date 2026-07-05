@@ -290,6 +290,12 @@ static int8_t cluster_fc_hidden_q8[cluster_protocol::CLUSTER_FC_HIDDEN];
 #if CLUSTER_ROLE_COORD
 static IPAddress cluster_worker_ips[3];
 static bool cluster_worker_ip_known[3] = {false, false, false};
+#if CLUSTER_WIFI_LAYER_SHARD
+static bool cluster_layer_shard_smoke_sent = false;
+static uint32_t cluster_layer_shard_seq = 3000;
+static uint8_t cluster_layer_shard_qx[cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN] = {0};
+static uint8_t cluster_layer_shard_qc[cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN] = {0};
+#endif
 #endif
 static constexpr uint8_t CLUSTER_BROADCAST_BOARD = 255;
 static const IPAddress CLUSTER_AP_IP(192, 168, 4, 1);
@@ -1353,6 +1359,49 @@ static void cluster_setup_wifi_demo() {
 #endif
 }
 
+#if CLUSTER_ROLE_COORD && CLUSTER_WIFI_LAYER_SHARD
+static void cluster_layer_shard_smoke_tick(uint32_t now) {
+  if (now - cluster_last_ping_ms >= 2000) {
+    cluster_last_ping_ms = now;
+    uint32_t ping_seq = cluster_ping_seq++;
+    bool ping_ok = cluster_send_packet(CLUSTER_AP_BROADCAST, CLUSTER_WIFI_UDP_PORT,
+                                       cluster_protocol::CLUSTER_MSG_PING,
+                                       CLUSTER_BROADCAST_BOARD, ping_seq);
+    Serial.printf("CLUSTER_WIFI_PING_BROADCAST seq=%lu dst=%s port=%u sent=%s reason=layer_shard_discovery\n",
+                  (unsigned long)ping_seq, CLUSTER_AP_BROADCAST.toString().c_str(),
+                  (unsigned)CLUSTER_WIFI_UDP_PORT, ping_ok ? "true" : "false");
+  }
+
+  if (cluster_layer_shard_smoke_sent || !cluster_model_ready || now < 12000) return;
+  if (!cluster_worker_ip_known[1] || !cluster_worker_ip_known[2]) return;
+
+  const uint32_t seq = cluster_layer_shard_seq++;
+  for (uint8_t dst = 1; dst <= 2; dst++) {
+    cluster_protocol::ClusterLstmStateForwardRequest request;
+    request.token_id = 19;
+    request.layer_start = dst;
+    request.layer_count = 1;
+    request.hidden_scale = 1.0f;
+    request.cell_scale = 1.0f;
+    request.qx = cluster_layer_shard_qx;
+    request.qc = cluster_layer_shard_qc;
+
+    uint8_t request_payload[cluster_protocol::CLUSTER_LSTM_STATE_FORWARD_REQUEST_PAYLOAD_SIZE];
+    bool encoded = cluster_protocol::encode_lstm_state_forward_request_payload(
+        request, request_payload, sizeof(request_payload));
+    IPAddress target = cluster_worker_ips[dst];
+    bool sent = encoded && cluster_send_packet(target, CLUSTER_WIFI_UDP_PORT,
+                                               cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_REQUEST,
+                                               dst, seq, request_payload, sizeof(request_payload));
+    Serial.printf("CLUSTER_LAYER_SHARD_STATE_SEND seq=%lu dst=%u target=%s token=%u layer_start=%u layer_count=%u sent=%s\n",
+                  (unsigned long)seq, (unsigned)dst, target.toString().c_str(),
+                  (unsigned)request.token_id, (unsigned)request.layer_start,
+                  (unsigned)request.layer_count, sent ? "true" : "false");
+  }
+  cluster_layer_shard_smoke_sent = true;
+}
+#endif
+
 static void cluster_loop_wifi_demo() {
 #if CLUSTER_ENABLE_OTA
   ArduinoOTA.handle();
@@ -1369,6 +1418,9 @@ static void cluster_loop_wifi_demo() {
   uint32_t now = millis();
 #if CLUSTER_WIFI_TCP_DIST && CLUSTER_WIFI_LSTM_SHARD
   cluster_handle_tcp_io(now);
+#endif
+#if CLUSTER_WIFI_LAYER_SHARD
+  cluster_layer_shard_smoke_tick(now);
 #endif
 #if CLUSTER_WIFI_PING_ONLY
   if (now - cluster_last_ping_ms >= 2000) {
