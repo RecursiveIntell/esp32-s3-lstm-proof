@@ -1,0 +1,28 @@
+si=-53 port=42100
+CLUSTER_WIFI_WORKER_STATUS board_id=1 ip=192.168.4.2 rssi=-56 port=42100
+CLUSTER_WIFI_WORKER_STATUS board_id=1 ip=192.168.4.2 rssi=-54 port=42100
+CLUSTER_BENCH_RESULT board=1STATUS board_id=1 ip=192.168.4.2 rssi=-52 port=42100
+CLUSTER_WIFI_PING board=1 seq=42 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-52
+CLUSTER_WIFI_PING board=1 seq=43 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-52
+CLUSTER_WIFI_WORKER_STATUS board_id=1 ip=192.168.4.2 rssi=-52 port=42100
+CLUSTER_WIFI_PING board=1 seq=44 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-53
+CLUSTER_WIFI_PING board=1 seq=45 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-52
+CLUSTER_WIFI_PING board=1 seq=46 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-53
+CLUSTER_WIFI_WORKER_STATUS board_id=1 ip=192.168.4.2 rssi=-53 port=42100
+CLUSTER_WIFI_PING board=1 seq=47 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-52
+CLUSTER_WIFI_PING board=1 seq=48 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-53
+CLUSTER_WIFI_WORKER_STATUS board_id=1 ip=192.168.4.2 rssi=-53 port=42100
+CLUSTER_WIFI_PING board=1 seq=49 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-53
+CLUSTER_BENCH_RESULT board=1 prompt_id=1 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1377 chars_per_sec=11.6195 checksum=0xcf7e3a33 output="was so happy. sh"
+CLUSTER_BENCH_RESULT_SEND board=1 sent=true target=192.168.4.1:42100
+CLUSTER_WIFI_PING board=1 seq=50 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-53
+CLUSTER_WIFI_PING board=1 seq=51 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-53
+CLUSTER_WIFI_WORKER_STATUS board_id=1 ip=192.168.4.2 rssi=-53 port=42100
+CLUSTER_WIFI_PING board=1 seq=52 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-53
+CLUSTER_WIFI_PING board=1 seq=53 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-52
+CLUSTER_WIFI_WORKER_STATUS board_id=1 ip=192.168.4.2 rssi=-53 port=42100
+CLUSTER_WIFI_PING board=1 seq=54 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-53
+CLUSTER_WIFI_PING board=1 seq=55 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-53
+CLUSTER_WIFI_PING board=1 seq=56 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-53
+CLUSTER_WIFI_WORKER_STATUS board_id=1 ip=192.168.4.2 rssi=-53 port=42100
+CLUSTER_WIFI_PING board=1 seq=57 from_board=0 from=192.168.4.1:42100 model_ready=1 reply=sent rssi=-52

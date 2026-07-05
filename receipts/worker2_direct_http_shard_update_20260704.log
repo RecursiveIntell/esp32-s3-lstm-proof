@@ -1,0 +1,54 @@
+--- active before ---
+PurpleMama_5G:802-11-wireless:wlo1
+lo:loopback:lo
+tailscale0:tun:tailscale0
+--- connect cluster ---
+Connection successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/47)
+--- route ---
+2: wlo1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    altname wlp1s0
+    altname wlx58020564495e
+    inet 192.168.4.5/24 brd 192.168.4.255 scope global dynamic noprefixroute wlo1
+       valid_lft 7197sec preferred_lft 7197sec
+--- health .2 .3 ---
+## 192.168.4.2
+ok=1 board_id=2 role=worker mode=lstm_shard ip=192.168.4.2
+## 192.168.4.3
+ok=1 board_id=1 role=worker mode=lstm_shard ip=192.168.4.3
+--- direct update board2 .2 ---
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0*   Trying 192.168.4.2:8080...
+* Connected to 192.168.4.2 (192.168.4.2) port 8080
+* using HTTP/1.x
+> POST /update_weights HTTP/1.1
+> Host: 192.168.4.2:8080
+> User-Agent: curl/8.15.0
+> Accept: */*
+> Content-Length: 2384540
+> Content-Type: multipart/form-data; boundary=------------------------XIh8lhhx7HVFPgpllBHk9z
+> Expect: 100-continue
+> 
+* Done waiting for 100-continue
+} [65536 bytes data]
+  2 2328k    0     0    2 65536      0  64331  0:00:37  0:00:01  0:00:36 64377 13 2328k    0     0   13  320k      0   168k  0:00:13  0:00:01  0:00:12  168k 19 2328k    0     0   19  448k      0   156k  0:00:14  0:00:02  0:00:12  156k 24 2328k    0     0   24  576k      0   121k  0:00:19  0:00:04  0:00:15  121k 27 2328k    0     0   27  640k      0   115k  0:00:20  0:00:05  0:00:15  115k 30 2328k    0     0   30  704k      0   114k  0:00:20  0:00:06  0:00:14  125k 35 2328k    0     0   35  832k      0   114k  0:00:20  0:00:07  0:00:13 97198 38 2328k    0     0   38  896k      0   114k  0:00:20  0:00:07  0:00:13 92453 46 2328k    0     0   46 1088k      0   120k  0:00:19  0:00:09  0:00:10  118k 52 2328k    0     0   52 1216k      0   121k  0:00:19  0:00:10  0:00:09  129k 54 2328k    0     0   54 1280k      0   116k  0:00:19  0:00:10  0:00:09  119k 60 2328k    0     0   60 1408k      0   116k  0:00:19  0:00:12  0:00:07  121k 65 2328k    0     0   65 1536k      0   118k  0:00:19  0:00:12  0:00:07  123k 71 2328k    0     0   71 1664k      0   115k  0:00:20  0:00:14  0:00:06  106k 74 2328k    0     0   74 1728k      0   114k  0:00:20  0:00:15  0:00:05  101k 79 2328k    0     0   79 1856k      0   115k  0:00:20  0:00:16  0:00:04  112k 87 2328k    0     0   87 2048k      0   120k  0:00:19  0:00:16  0:00:03  129k 96 2328k    0     0   96 2240k      0   124k  0:00:18  0:00:17  0:00:01  140k* upload completely sent off: 2384540 bytes
+100 2328k    0     0  100 2328k      0   119k  0:00:19  0:00:19 --:--:--  129k100 2328k    0     0  100 2328k      0   113k  0:00:20  0:00:20 --:--:--  109k< HTTP/1.1 200 OK
+< Content-Type: text/plain
+< Connection: close
+< Content-Length: 3
+< Connection: close
+< 
+100 2328k    0     0  100 2328k      0   109k  0:00:21  0:00:21 --:--:-- 92701{ [3 bytes data]
+100 2328k    0     3  100 2328k      0   109k  0:00:21  0:00:21 --:--:-- 66387
+* shutting down connection #0
+OK
+curl_rc=0
+--- post health ---
+## 192.168.4.2
+ok=1 board_id=2 role=worker mode=lstm_shard ip=192.168.4.2
+## 192.168.4.3
+ok=1 board_id=1 role=worker mode=lstm_shard ip=192.168.4.3
+--- restore wifi ---
+Passwords or encryption keys are required to access the wireless network 'PurpleMama_5G'.
+Warning: password for '802-11-wireless-security.psk' not given in 'passwd-file' and nmcli cannot ask without '--ask' option.
+Connection successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/48)

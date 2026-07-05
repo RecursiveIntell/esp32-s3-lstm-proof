@@ -1,0 +1,22 @@
+c
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (174) esp_core_dump_flash: No core dump partition d!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=local_generator
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100
+CLUSTER_WIFI_UDP_READY board_id=0 port=42100
+CLUSTER_OTA_READY board_id=0 hostname=ri-esp-cluster-coord ip=192.168.4.1 port=3232
+CLUSTER_HTTP_UPDATE_READY board_id=0 ip=192.168.4.1 port=8080 endpoint=/update data_endpoint=/update_weights
+weights partition addr=0x210000 size=5242880
+RILM version=1 tensors=15
+payloads cloned bytes=4784772 free_heap=202736 free_psram=3635859
+int4 recurrent lstm.weight_hh_l0 old=1048576 new=524288 scale=0.11046
+int4 recurrent lstm.weight_hh_l1 old=1048576 new=524288 scale=0.141142
+int4 recurrent lstm.weight_hh_l2 old=1048576 new=524288 scale=0.127179
+int4 recurrent converted=3 saved=1572864 free_psram=2062947
+CLUSTER_MODEL_LOCAL_GENERATOR_READY board_id=0 profile=tinystories_h512_mixed_lstm_safe params=6337569 hidden=512 layers=3 weights_sha256=709ff8a921612f0d1a075ce586d3355c895b16a100d12d8f74bb3367cdf83c61
+CLUSTER_MODEL_READY board_id=0 ok=1 role=coord mode=local_generator
+CLUSTER_BENCH_RESULT board=0 prompt_id=0 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1379 chars_per_sec=11.6026 checksum=0x524ee260 output="time there was a"
+CLUSTER_BENCH_RESULT board=1 prompt_id=1 profile=tinystories_h512_mixed_lstm_safe generated_chars=16 elapsed_ms=1377 chars_per_sec=11.6195 checksum=0xcf7e3a33
