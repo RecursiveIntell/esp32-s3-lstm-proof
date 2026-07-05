@@ -33,9 +33,16 @@ enum ClusterMsgType : uint8_t {
   CLUSTER_MSG_BENCH_START = 11,
   CLUSTER_MSG_BENCH_RESULT = 12,
   CLUSTER_MSG_BENCH_AGGREGATE_RESULT = 13,
+  CLUSTER_MSG_LSTM_STATE_FORWARD_REQUEST = 14,
+  CLUSTER_MSG_LSTM_STATE_FORWARD_RESULT = 15,
 };
 
 static constexpr size_t CLUSTER_BENCH_RESULT_PAYLOAD_SIZE = 16;
+static constexpr size_t CLUSTER_LSTM_STATE_HIDDEN = 512;
+static constexpr size_t CLUSTER_LSTM_STATE_FORWARD_REQUEST_PAYLOAD_SIZE =
+    1 + 1 + 1 + 4 + 4 + CLUSTER_LSTM_STATE_HIDDEN + CLUSTER_LSTM_STATE_HIDDEN;
+static constexpr size_t CLUSTER_LSTM_STATE_FORWARD_RESULT_PAYLOAD_SIZE =
+    1 + 4 + 4 + CLUSTER_LSTM_STATE_HIDDEN + CLUSTER_LSTM_STATE_HIDDEN;
 
 struct ClusterBenchResult {
   uint8_t prompt_id;
@@ -44,6 +51,24 @@ struct ClusterBenchResult {
   uint32_t elapsed_ms;
   uint32_t checksum;
   float chars_per_sec;
+};
+
+struct ClusterLstmStateForwardRequest {
+  uint8_t token_id;
+  uint8_t layer_start;
+  uint8_t layer_count;
+  float hidden_scale;
+  float cell_scale;
+  const uint8_t *qx;
+  const uint8_t *qc;
+};
+
+struct ClusterLstmStateForwardResult {
+  uint8_t layer_end;
+  float hidden_scale;
+  float cell_scale;
+  const uint8_t *qx;
+  const uint8_t *qc;
 };
 
 struct ClusterPacketHeader {
@@ -158,6 +183,58 @@ static inline bool decode_bench_result_payload(const uint8_t *payload, size_t pa
   result_out->elapsed_ms = read_u32_le(payload + 4);
   result_out->checksum = read_u32_le(payload + 8);
   result_out->chars_per_sec = read_f32_le(payload + 12);
+  return true;
+}
+
+static inline bool encode_lstm_state_forward_request_payload(const ClusterLstmStateForwardRequest &request,
+                                                             uint8_t *out, size_t out_capacity) {
+  if (out == nullptr || request.qx == nullptr || request.qc == nullptr) return false;
+  if (out_capacity < CLUSTER_LSTM_STATE_FORWARD_REQUEST_PAYLOAD_SIZE) return false;
+  out[0] = request.token_id;
+  out[1] = request.layer_start;
+  out[2] = request.layer_count;
+  write_f32_le(out + 3, request.hidden_scale);
+  write_f32_le(out + 7, request.cell_scale);
+  memcpy(out + 11, request.qx, CLUSTER_LSTM_STATE_HIDDEN);
+  memcpy(out + 11 + CLUSTER_LSTM_STATE_HIDDEN, request.qc, CLUSTER_LSTM_STATE_HIDDEN);
+  return true;
+}
+
+static inline bool decode_lstm_state_forward_request_payload(const uint8_t *payload, size_t payload_len,
+                                                             ClusterLstmStateForwardRequest *request_out) {
+  if (payload == nullptr || request_out == nullptr) return false;
+  if (payload_len != CLUSTER_LSTM_STATE_FORWARD_REQUEST_PAYLOAD_SIZE) return false;
+  request_out->token_id = payload[0];
+  request_out->layer_start = payload[1];
+  request_out->layer_count = payload[2];
+  request_out->hidden_scale = read_f32_le(payload + 3);
+  request_out->cell_scale = read_f32_le(payload + 7);
+  request_out->qx = payload + 11;
+  request_out->qc = payload + 11 + CLUSTER_LSTM_STATE_HIDDEN;
+  return true;
+}
+
+static inline bool encode_lstm_state_forward_result_payload(const ClusterLstmStateForwardResult &result,
+                                                            uint8_t *out, size_t out_capacity) {
+  if (out == nullptr || result.qx == nullptr || result.qc == nullptr) return false;
+  if (out_capacity < CLUSTER_LSTM_STATE_FORWARD_RESULT_PAYLOAD_SIZE) return false;
+  out[0] = result.layer_end;
+  write_f32_le(out + 1, result.hidden_scale);
+  write_f32_le(out + 5, result.cell_scale);
+  memcpy(out + 9, result.qx, CLUSTER_LSTM_STATE_HIDDEN);
+  memcpy(out + 9 + CLUSTER_LSTM_STATE_HIDDEN, result.qc, CLUSTER_LSTM_STATE_HIDDEN);
+  return true;
+}
+
+static inline bool decode_lstm_state_forward_result_payload(const uint8_t *payload, size_t payload_len,
+                                                            ClusterLstmStateForwardResult *result_out) {
+  if (payload == nullptr || result_out == nullptr) return false;
+  if (payload_len != CLUSTER_LSTM_STATE_FORWARD_RESULT_PAYLOAD_SIZE) return false;
+  result_out->layer_end = payload[0];
+  result_out->hidden_scale = read_f32_le(payload + 1);
+  result_out->cell_scale = read_f32_le(payload + 5);
+  result_out->qx = payload + 9;
+  result_out->qc = payload + 9 + CLUSTER_LSTM_STATE_HIDDEN;
   return true;
 }
 

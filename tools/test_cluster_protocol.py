@@ -21,6 +21,8 @@ LSTM_GATE_RESULT = 10
 BENCH_START = 11
 BENCH_RESULT = 12
 BENCH_AGGREGATE_RESULT = 13
+LSTM_STATE_FORWARD_REQUEST = 14
+LSTM_STATE_FORWARD_RESULT = 15
 MATMUL_FIXTURE_ID = 1
 MATMUL_FIXTURE_INT8_ID = 1
 MATMUL_FIXTURE_INT4_ID = 2
@@ -205,6 +207,66 @@ def encode_lstm_gate_result_payload(layer: int, row_start: int, values: list[int
     if len(values) > LSTM_GATE_RESULT_MAX_VALUES:
         raise ValueError("too many gate values")
     return struct.pack("<BHH", layer, row_start, len(values)) + struct.pack("<" + "i" * len(values), *values)
+
+
+def encode_lstm_state_forward_request_payload(
+    token_id: int,
+    layer_start: int,
+    layer_count: int,
+    hidden_scale: float,
+    cell_scale: float,
+    qx: bytes,
+    qc: bytes,
+) -> bytes:
+    if len(qx) != LSTM_HIDDEN or len(qc) != LSTM_HIDDEN:
+        raise ValueError("bad state vector length")
+    return struct.pack("<BBBff", token_id, layer_start, layer_count, hidden_scale, cell_scale) + qx + qc
+
+
+def decode_lstm_state_forward_request_payload(payload: bytes) -> dict[str, int | float | bytes]:
+    expected = 1 + 1 + 1 + 4 + 4 + LSTM_HIDDEN + LSTM_HIDDEN
+    if len(payload) != expected:
+        raise ProtocolError(f"bad lstm state forward request length: {len(payload)} != {expected}")
+    token_id, layer_start, layer_count, hidden_scale, cell_scale = struct.unpack("<BBBff", payload[:11])
+    qx = payload[11:11 + LSTM_HIDDEN]
+    qc = payload[11 + LSTM_HIDDEN:]
+    return {
+        "token_id": token_id,
+        "layer_start": layer_start,
+        "layer_count": layer_count,
+        "hidden_scale": hidden_scale,
+        "cell_scale": cell_scale,
+        "qx": qx,
+        "qc": qc,
+    }
+
+
+def encode_lstm_state_forward_result_payload(
+    layer_end: int,
+    hidden_scale: float,
+    cell_scale: float,
+    qx: bytes,
+    qc: bytes,
+) -> bytes:
+    if len(qx) != LSTM_HIDDEN or len(qc) != LSTM_HIDDEN:
+        raise ValueError("bad state vector length")
+    return struct.pack("<Bff", layer_end, hidden_scale, cell_scale) + qx + qc
+
+
+def decode_lstm_state_forward_result_payload(payload: bytes) -> dict[str, int | float | bytes]:
+    expected = 1 + 4 + 4 + LSTM_HIDDEN + LSTM_HIDDEN
+    if len(payload) != expected:
+        raise ProtocolError(f"bad lstm state forward result length: {len(payload)} != {expected}")
+    layer_end, hidden_scale, cell_scale = struct.unpack("<Bff", payload[:9])
+    qx = payload[9:9 + LSTM_HIDDEN]
+    qc = payload[9 + LSTM_HIDDEN:]
+    return {
+        "layer_end": layer_end,
+        "hidden_scale": hidden_scale,
+        "cell_scale": cell_scale,
+        "qx": qx,
+        "qc": qc,
+    }
 
 
 def encode_benchmark_result_payload(
@@ -533,6 +595,50 @@ def test_pipelined_lstm_layer_state_tracks_eight_results() -> None:
     assert state.complete()
 
 
+def test_lstm_state_forward_payloads() -> None:
+    qx = bytes((i % 256 for i in range(LSTM_HIDDEN)))
+    qc = bytes(((255 - i) % 256 for i in range(LSTM_HIDDEN)))
+    payload = encode_lstm_state_forward_request_payload(
+        token_id=19,
+        layer_start=1,
+        layer_count=1,
+        hidden_scale=0.015625,
+        cell_scale=0.03125,
+        qx=qx,
+        qc=qc,
+    )
+    assert len(payload) == 1 + 1 + 1 + 4 + 4 + LSTM_HIDDEN + LSTM_HIDDEN
+    packet = encode_packet(LSTM_STATE_FORWARD_REQUEST, src_board=0, dst_board=1, seq=300, payload=payload)
+    header, decoded = decode_packet(packet)
+    assert header["msg_type"] == LSTM_STATE_FORWARD_REQUEST
+    got = decode_lstm_state_forward_request_payload(decoded)
+    assert got["token_id"] == 19
+    assert got["layer_start"] == 1
+    assert got["layer_count"] == 1
+    assert abs(got["hidden_scale"] - 0.015625) < 1e-9
+    assert abs(got["cell_scale"] - 0.03125) < 1e-9
+    assert got["qx"] == qx
+    assert got["qc"] == qc
+
+    result_payload = encode_lstm_state_forward_result_payload(
+        layer_end=2,
+        hidden_scale=0.02,
+        cell_scale=0.04,
+        qx=qc,
+        qc=qx,
+    )
+    assert len(result_payload) == 1 + 4 + 4 + LSTM_HIDDEN + LSTM_HIDDEN
+    packet = encode_packet(LSTM_STATE_FORWARD_RESULT, src_board=1, dst_board=0, seq=300, payload=result_payload)
+    header, decoded = decode_packet(packet)
+    assert header["msg_type"] == LSTM_STATE_FORWARD_RESULT
+    got_result = decode_lstm_state_forward_result_payload(decoded)
+    assert got_result["layer_end"] == 2
+    assert abs(got_result["hidden_scale"] - 0.02) < 1e-6
+    assert abs(got_result["cell_scale"] - 0.04) < 1e-6
+    assert got_result["qx"] == qc
+    assert got_result["qc"] == qx
+
+
 def main() -> None:
     test_ping_empty_payload()
     test_payload_roundtrip()
@@ -547,6 +653,7 @@ def main() -> None:
     test_large_chunk_1024_rows()
     test_lstm_gate_request_with_large_count()
     test_pipelined_lstm_layer_state_tracks_eight_results()
+    test_lstm_state_forward_payloads()
     print("PASS packet encode/decode/crc")
 
 
