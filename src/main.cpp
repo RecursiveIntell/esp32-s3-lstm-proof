@@ -2530,10 +2530,12 @@ static void cluster_dist_advance_or_finish() {
   if (cluster_dist_layer >= LAYERS) {
     cluster_dist_output_token = (uint8_t)model_finish_fc(false, &cluster_dist_output_logit);
     const uint32_t elapsed = millis() - cluster_dist_started_ms;
-    Serial.printf("CLUSTER_DIST_GEN_TOKEN prompt=\"%s\" local_p22_token=%u local_p22_char=%c dist_token=%u dist_char=%c logit=%.6f elapsed_ms=%lu status=PASS note=worker_int8_recurrent_vs_local_int4_reference_udp_pipeline\n",
+    const bool token_match = (cluster_dist_output_token == cluster_dist_expected_token);
+    Serial.printf("CLUSTER_DIST_GEN_TOKEN prompt=\"%s\" local_p22_token=%u local_p22_char=%c dist_token=%u dist_char=%c logit=%.6f elapsed_ms=%lu status=%s note=worker_int8_recurrent_vs_local_int4_reference_udp_pipeline\n",
                   cluster_dist_prompt, (unsigned)cluster_dist_expected_token, idx_vocab(cluster_dist_expected_token),
                   (unsigned)cluster_dist_output_token, idx_vocab(cluster_dist_output_token),
-                  (double)cluster_dist_output_logit, (unsigned long)elapsed);
+                  (double)cluster_dist_output_logit, (unsigned long)elapsed,
+                  token_match ? "PASS" : "FAIL");
     cluster_dist_active = false;
     return;
   }
@@ -2547,10 +2549,12 @@ static void cluster_dist_advance_or_finish() {
     if (cluster_dist_layer >= LAYERS) {
       cluster_dist_output_token = (uint8_t)model_finish_fc(false, &cluster_dist_output_logit);
       const uint32_t elapsed = millis() - cluster_dist_started_ms;
-      Serial.printf("CLUSTER_DIST_GEN_TOKEN prompt=\"%s\" local_p22_token=%u local_p22_char=%c dist_token=%u dist_char=%c logit=%.6f elapsed_ms=%lu status=PASS note=worker_int8_recurrent_vs_local_int4_reference\n",
+      const bool token_match = (cluster_dist_output_token == cluster_dist_expected_token);
+      Serial.printf("CLUSTER_DIST_GEN_TOKEN prompt=\"%s\" local_p22_token=%u local_p22_char=%c dist_token=%u dist_char=%c logit=%.6f elapsed_ms=%lu status=%s note=worker_int8_recurrent_vs_local_int4_reference\n",
                     cluster_dist_prompt, (unsigned)cluster_dist_expected_token, idx_vocab(cluster_dist_expected_token),
                     (unsigned)cluster_dist_output_token, idx_vocab(cluster_dist_output_token),
-                    (double)cluster_dist_output_logit, (unsigned long)elapsed);
+                    (double)cluster_dist_output_logit, (unsigned long)elapsed,
+                    token_match ? "PASS" : "FAIL");
       cluster_dist_active = false;
       return;
     }
