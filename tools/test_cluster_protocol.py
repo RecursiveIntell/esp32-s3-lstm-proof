@@ -27,6 +27,8 @@ MATMUL_FIXTURE_INT4_ID = 2
 MATMUL_VECTOR_LEN = 16
 LSTM_HIDDEN = 512
 LSTM_GATE_RESULT_MAX_VALUES = 1024
+LSTM_PIPELINE_OFFSETS = (0, 256, 512, 768)
+LSTM_PIPELINE_WORKERS = (1, 2)
 
 
 class ProtocolError(ValueError):
@@ -248,6 +250,38 @@ def decode_lstm_gate_result_payload(payload: bytes) -> tuple[int, int, list[int]
         raise ProtocolError("bad lstm gate result length")
     values = list(struct.unpack("<" + "i" * count, payload[5:])) if count else []
     return layer, row_start, values
+
+
+class PipelinedLstmLayerState:
+    def __init__(self, layer: int, first_seq: int):
+        self.layer = layer
+        self.offset_seq = {offset: first_seq + i for i, offset in enumerate(LSTM_PIPELINE_OFFSETS)}
+        self.seen = {(worker, offset): False for worker in LSTM_PIPELINE_WORKERS for offset in LSTM_PIPELINE_OFFSETS}
+
+    def expected_dispatches(self) -> list[tuple[int, int, int]]:
+        dispatches = []
+        for offset in LSTM_PIPELINE_OFFSETS:
+            for worker in LSTM_PIPELINE_WORKERS:
+                row_start = offset if worker == 1 else 1024 + offset
+                dispatches.append((worker, row_start, self.offset_seq[offset]))
+        return dispatches
+
+    def accept_result(self, worker: int, seq: int, layer: int, row_start: int, count: int) -> bool:
+        if layer != self.layer or worker not in LSTM_PIPELINE_WORKERS or count != 256:
+            return False
+        base = 0 if worker == 1 else 1024
+        offset = row_start - base
+        if offset not in LSTM_PIPELINE_OFFSETS:
+            return False
+        key = (worker, offset)
+        if self.seen[key] or self.offset_seq[offset] != seq:
+            return False
+        self.seen[key] = True
+        return True
+
+    def complete(self) -> bool:
+        return all(self.seen.values())
+
 
 def expect_reject(packet: bytes, expected: str) -> None:
     try:
@@ -472,6 +506,33 @@ def test_lstm_gate_request_with_large_count() -> None:
     assert got_qh == qh
 
 
+def test_pipelined_lstm_layer_state_tracks_eight_results() -> None:
+    state = PipelinedLstmLayerState(layer=1, first_seq=200)
+    dispatches = state.expected_dispatches()
+    assert len(dispatches) == 8
+    assert dispatches == [
+        (1, 0, 200),
+        (2, 1024, 200),
+        (1, 256, 201),
+        (2, 1280, 201),
+        (1, 512, 202),
+        (2, 1536, 202),
+        (1, 768, 203),
+        (2, 1792, 203),
+    ]
+
+    assert state.accept_result(worker=2, seq=202, layer=1, row_start=1536, count=256)
+    assert not state.accept_result(worker=2, seq=202, layer=1, row_start=1536, count=256)
+    assert not state.accept_result(worker=1, seq=202, layer=1, row_start=256, count=256)
+    assert not state.accept_result(worker=1, seq=201, layer=2, row_start=256, count=256)
+    assert not state.accept_result(worker=1, seq=201, layer=1, row_start=384, count=256)
+    assert not state.complete()
+
+    for worker, row_start, seq in dispatches:
+        state.accept_result(worker=worker, seq=seq, layer=1, row_start=row_start, count=256)
+    assert state.complete()
+
+
 def main() -> None:
     test_ping_empty_payload()
     test_payload_roundtrip()
@@ -485,6 +546,7 @@ def main() -> None:
     test_lstm_gate_payloads()
     test_large_chunk_1024_rows()
     test_lstm_gate_request_with_large_count()
+    test_pipelined_lstm_layer_state_tracks_eight_results()
     print("PASS packet encode/decode/crc")
 
 

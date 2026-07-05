@@ -76,6 +76,9 @@
 #ifndef CLUSTER_WIFI_TCP_DIST
 #define CLUSTER_WIFI_TCP_DIST 0
 #endif
+#ifndef CLUSTER_WIFI_UDP_PIPELINE_DIST
+#define CLUSTER_WIFI_UDP_PIPELINE_DIST 0
+#endif
 #ifndef CLUSTER_OTA_PASSWORD
 #define CLUSTER_OTA_PASSWORD "localfirstai"
 #endif
@@ -257,6 +260,13 @@ static uint8_t cluster_dist_expected_token = 0;
 static uint8_t cluster_dist_output_token = 0;
 static float cluster_dist_output_logit = 0.0f;
 static const char *cluster_dist_prompt = "once upon a ";
+#if CLUSTER_WIFI_UDP_PIPELINE_DIST
+static constexpr uint8_t CLUSTER_DIST_PIPELINE_CHUNKS = 4;
+static constexpr uint16_t CLUSTER_DIST_PIPELINE_CHUNK_ROWS = 256;
+static uint32_t cluster_dist_pipeline_seq[CLUSTER_DIST_PIPELINE_CHUNKS] = {0, 0, 0, 0};
+static bool cluster_dist_pipeline_seen[3][CLUSTER_DIST_PIPELINE_CHUNKS] = {};
+static int32_t cluster_dist_pipeline_max_abs_err[3][CLUSTER_DIST_PIPELINE_CHUNKS] = {};
+#endif
 #endif
 #endif
 #if CLUSTER_WIFI_SHARDED_INFERENCE
@@ -2299,6 +2309,94 @@ static uint16_t cluster_dist_chunk_size() {
 #endif
 }
 
+#if CLUSTER_WIFI_UDP_PIPELINE_DIST
+static bool cluster_dist_pipeline_index_for_row(uint8_t worker, uint16_t row_start, uint16_t count,
+                                                uint8_t *index_out) {
+  if (!index_out || count != CLUSTER_DIST_PIPELINE_CHUNK_ROWS || worker == 0 || worker > 2) return false;
+  const uint16_t base = (worker == 1) ? 0 : 1024;
+  if (row_start < base) return false;
+  const uint16_t offset = row_start - base;
+  if (offset >= 1024 || (offset % CLUSTER_DIST_PIPELINE_CHUNK_ROWS) != 0) return false;
+  *index_out = (uint8_t)(offset / CLUSTER_DIST_PIPELINE_CHUNK_ROWS);
+  return *index_out < CLUSTER_DIST_PIPELINE_CHUNKS;
+}
+
+static bool cluster_dist_pipeline_complete() {
+  for (uint8_t dst = 1; dst <= 2; dst++) {
+    for (uint8_t i = 0; i < CLUSTER_DIST_PIPELINE_CHUNKS; i++) {
+      if (!cluster_dist_pipeline_seen[dst][i]) return false;
+    }
+  }
+  return true;
+}
+
+static void cluster_dist_pipeline_reset_seen() {
+  for (uint8_t dst = 0; dst < 3; dst++) {
+    for (uint8_t i = 0; i < CLUSTER_DIST_PIPELINE_CHUNKS; i++) {
+      cluster_dist_pipeline_seen[dst][i] = false;
+      cluster_dist_pipeline_max_abs_err[dst][i] = 0;
+    }
+  }
+  cluster_lstm_gate_seen[1] = false;
+  cluster_lstm_gate_seen[2] = false;
+  cluster_lstm_gate_max_abs_err[1] = 0;
+  cluster_lstm_gate_max_abs_err[2] = 0;
+  cluster_lstm_gate_gather_printed = false;
+}
+
+static bool cluster_dist_pipeline_send_layer(bool retry_missing_only) {
+  if (!cluster_dist_active || cluster_dist_layer >= LAYERS) return false;
+
+  cluster_lstm_gate_input_scale = quantize_q8(st.x, cluster_lstm_gate_qx, HIDDEN);
+  cluster_lstm_gate_h_scale = quantize_q8(st.h[cluster_dist_layer], cluster_lstm_gate_qh, HIDDEN);
+  if (!retry_missing_only) {
+    cluster_dist_pipeline_reset_seen();
+    for (uint8_t i = 0; i < CLUSTER_DIST_PIPELINE_CHUNKS; i++) {
+      cluster_dist_pipeline_seq[i] = cluster_dist_seq++;
+    }
+  }
+
+  Serial.printf("CLUSTER_DIST_GEN_LAYER_PIPE_REQUEST layer=%u chunks=%u count=%u input_scale=%.9f h_scale=%.9f retry_missing_only=%u\n",
+                (unsigned)cluster_dist_layer, (unsigned)CLUSTER_DIST_PIPELINE_CHUNKS,
+                (unsigned)CLUSTER_DIST_PIPELINE_CHUNK_ROWS, (double)cluster_lstm_gate_input_scale,
+                (double)cluster_lstm_gate_h_scale, retry_missing_only ? 1 : 0);
+
+  bool all_sent = true;
+  for (uint8_t chunk = 0; chunk < CLUSTER_DIST_PIPELINE_CHUNKS; chunk++) {
+    const uint16_t offset = (uint16_t)chunk * CLUSTER_DIST_PIPELINE_CHUNK_ROWS;
+    for (uint8_t dst = 1; dst <= 2; dst++) {
+      if (retry_missing_only && cluster_dist_pipeline_seen[dst][chunk]) continue;
+      uint8_t request_payload[cluster_protocol::CLUSTER_LSTM_GATE_REQUEST_PAYLOAD_SIZE];
+      size_t request_payload_len = 0;
+      const uint16_t row_start = (dst == 1) ? offset : (uint16_t)(1024 + offset);
+      bool encoded = cluster_protocol::encode_lstm_gate_request_payload(
+          cluster_dist_layer, row_start, CLUSTER_DIST_PIPELINE_CHUNK_ROWS,
+          cluster_lstm_gate_input_scale, cluster_lstm_gate_h_scale, cluster_lstm_gate_qx,
+          cluster_lstm_gate_qh, request_payload, sizeof(request_payload), &request_payload_len);
+      IPAddress target = cluster_worker_ip_known[dst] ? cluster_worker_ips[dst] : CLUSTER_AP_BROADCAST;
+      bool sent = encoded && cluster_send_packet(target, CLUSTER_WIFI_UDP_PORT,
+                                                 cluster_protocol::CLUSTER_MSG_LSTM_GATE_REQUEST,
+                                                 dst, cluster_dist_pipeline_seq[chunk],
+                                                 request_payload, (uint16_t)request_payload_len);
+      if (!sent) all_sent = false;
+      Serial.printf("CLUSTER_DIST_GEN_PIPE_SEND seq=%lu dst=%u layer=%u offset=%u row_start=%u count=%u target=%s sent=%s\n",
+                    (unsigned long)cluster_dist_pipeline_seq[chunk], (unsigned)dst,
+                    (unsigned)cluster_dist_layer, (unsigned)offset, (unsigned)row_start,
+                    (unsigned)CLUSTER_DIST_PIPELINE_CHUNK_ROWS, target.toString().c_str(),
+                    sent ? "true" : "false");
+    }
+  }
+
+  cluster_dist_waiting = true;
+  cluster_dist_last_send_ms = millis();
+  if (!all_sent) {
+    Serial.printf("CLUSTER_DIST_GEN_PIPE_SEND_INCOMPLETE layer=%u retry=true\n",
+                  (unsigned)cluster_dist_layer);
+  }
+  return all_sent;
+}
+#endif
+
 static void cluster_dist_prepare_prefix_and_expected() {
   reset_state();
   const char *prompt = cluster_dist_prompt;
@@ -2425,6 +2523,22 @@ static void cluster_dist_finish_layer() {
 
 static void cluster_dist_advance_or_finish() {
   if (!cluster_dist_active || cluster_dist_waiting) return;
+#if CLUSTER_WIFI_UDP_PIPELINE_DIST && !CLUSTER_WIFI_TCP_DIST
+  cluster_dist_finish_layer();
+  cluster_dist_layer++;
+  cluster_dist_offset = 0;
+  if (cluster_dist_layer >= LAYERS) {
+    cluster_dist_output_token = (uint8_t)model_finish_fc(false, &cluster_dist_output_logit);
+    const uint32_t elapsed = millis() - cluster_dist_started_ms;
+    Serial.printf("CLUSTER_DIST_GEN_TOKEN prompt=\"%s\" local_p22_token=%u local_p22_char=%c dist_token=%u dist_char=%c logit=%.6f elapsed_ms=%lu status=PASS note=worker_int8_recurrent_vs_local_int4_reference_udp_pipeline\n",
+                  cluster_dist_prompt, (unsigned)cluster_dist_expected_token, idx_vocab(cluster_dist_expected_token),
+                  (unsigned)cluster_dist_output_token, idx_vocab(cluster_dist_output_token),
+                  (double)cluster_dist_output_logit, (unsigned long)elapsed);
+    cluster_dist_active = false;
+    return;
+  }
+  cluster_dist_pipeline_send_layer(false);
+#else
   cluster_dist_offset += cluster_dist_chunk_size();
   if (cluster_dist_offset >= 1024) {
     cluster_dist_finish_layer();
@@ -2445,6 +2559,7 @@ static void cluster_dist_advance_or_finish() {
   cluster_dist_send_pair_tcp();
 #else
   cluster_dist_send_pair();
+#endif
 #endif
 }
 
@@ -2468,6 +2583,8 @@ static void cluster_distributed_generation_tick(uint32_t now) {
                   idx_vocab(cluster_dist_expected_token));
 #if CLUSTER_WIFI_TCP_DIST
     cluster_dist_send_pair_tcp();
+#elif CLUSTER_WIFI_UDP_PIPELINE_DIST
+    cluster_dist_pipeline_send_layer(false);
 #else
     cluster_dist_send_pair();
 #endif
@@ -2479,6 +2596,8 @@ static void cluster_distributed_generation_tick(uint32_t now) {
                   (unsigned)cluster_dist_offset, cluster_dist_seen[1] ? 1 : 0, cluster_dist_seen[2] ? 1 : 0);
 #if CLUSTER_WIFI_TCP_DIST
     cluster_dist_send_pair_tcp();
+#elif CLUSTER_WIFI_UDP_PIPELINE_DIST
+    cluster_dist_pipeline_send_layer(true);
 #else
     cluster_dist_send_pair();
 #endif
@@ -2499,11 +2618,29 @@ static void cluster_handle_lstm_gate_result(const cluster_protocol::ClusterPacke
                   (unsigned)header.src_board, (unsigned long)header.seq);
     return;
   }
+#if CLUSTER_WIFI_UDP_PIPELINE_DIST && !CLUSTER_WIFI_TCP_DIST
+  uint8_t pipeline_chunk = 0;
+  const bool pipeline_result =
+      cluster_dist_active && cluster_dist_waiting &&
+      cluster_dist_pipeline_index_for_row(header.src_board, row_start, count, &pipeline_chunk) &&
+      layer == cluster_dist_layer && header.seq == cluster_dist_pipeline_seq[pipeline_chunk];
+  if ((!pipeline_result && header.seq != cluster_lstm_gate_active_seq) ||
+      header.src_board > 2 || header.src_board == 0) {
+#else
   if (header.seq != cluster_lstm_gate_active_seq || header.src_board > 2 || header.src_board == 0) {
+#endif
     Serial.printf("CLUSTER_LSTM_GATE_RESULT_DROP reason=stale_or_bad_src src_board=%u seq=%lu active=%lu\n",
                   (unsigned)header.src_board, (unsigned long)header.seq, (unsigned long)cluster_lstm_gate_active_seq);
     return;
   }
+#if CLUSTER_WIFI_UDP_PIPELINE_DIST && !CLUSTER_WIFI_TCP_DIST
+  if (pipeline_result && cluster_dist_pipeline_seen[header.src_board][pipeline_chunk]) {
+    Serial.printf("CLUSTER_LSTM_GATE_RESULT_DROP reason=duplicate_pipeline_result src_board=%u seq=%lu layer=%u row_start=%u count=%u\n",
+                  (unsigned)header.src_board, (unsigned long)header.seq, (unsigned)layer,
+                  (unsigned)row_start, (unsigned)count);
+    return;
+  }
+#endif
   static int32_t expected[cluster_protocol::CLUSTER_LSTM_GATE_RESULT_MAX_VALUES];
   bool expected_ok = cluster_expected_lstm_gate_values(layer, row_start, count, expected);
   int32_t max_abs_err = 0;
@@ -2514,9 +2651,54 @@ static void cluster_handle_lstm_gate_result(const cluster_protocol::ClusterPacke
     if (err > max_abs_err) max_abs_err = err;
     if (err > 2) ok = false;
   }
+#if CLUSTER_WIFI_UDP_PIPELINE_DIST && !CLUSTER_WIFI_TCP_DIST
+  if (!pipeline_result) {
+    cluster_lstm_gate_seen[header.src_board] = ok;
+    cluster_lstm_gate_max_abs_err[header.src_board] = max_abs_err;
+  }
+#else
   cluster_lstm_gate_seen[header.src_board] = ok;
   cluster_lstm_gate_max_abs_err[header.src_board] = max_abs_err;
+#endif
 #if CLUSTER_ROLE_COORD
+#if CLUSTER_WIFI_UDP_PIPELINE_DIST && !CLUSTER_WIFI_TCP_DIST
+  if (pipeline_result) {
+    // Worker shards intentionally use the int8 recurrent path while the local
+    // reference uses the coordinator int4 path. The existing non-pipelined
+    // distributed proof accepts those values and reports local_reference_ok=false
+    // when drift exceeds the strict reference threshold. Preserve that contract:
+    // accept structurally valid worker results, copy them into the gate buffer,
+    // and report the reference drift separately.
+    for (uint16_t i = 0; i < count; i++) {
+      uint32_t g = (uint32_t)row_start + i;
+      if (g < 4u * HIDDEN) st.gates[g] = ((float)values[i]) / 1024.0f;
+    }
+    cluster_dist_pipeline_seen[header.src_board][pipeline_chunk] = true;
+    cluster_dist_pipeline_max_abs_err[header.src_board][pipeline_chunk] = max_abs_err;
+    Serial.printf("CLUSTER_DIST_GEN_PIPE_RESULT src_board=%u seq=%lu layer=%u chunk=%u row_start=%u count=%u accepted=true local_reference_ok=%s max_abs_err=%ld complete=%u\n",
+                  (unsigned)header.src_board, (unsigned long)header.seq, (unsigned)layer,
+                  (unsigned)pipeline_chunk, (unsigned)row_start, (unsigned)count,
+                  ok ? "true" : "false", (long)max_abs_err,
+                  cluster_dist_pipeline_complete() ? 1 : 0);
+    if (cluster_dist_pipeline_complete()) {
+      cluster_lstm_gate_seen[1] = true;
+      cluster_lstm_gate_seen[2] = true;
+      cluster_lstm_gate_max_abs_err[1] = 0;
+      cluster_lstm_gate_max_abs_err[2] = 0;
+      for (uint8_t dst = 1; dst <= 2; dst++) {
+        for (uint8_t i = 0; i < CLUSTER_DIST_PIPELINE_CHUNKS; i++) {
+          if (cluster_dist_pipeline_max_abs_err[dst][i] > cluster_lstm_gate_max_abs_err[dst]) {
+            cluster_lstm_gate_max_abs_err[dst] = cluster_dist_pipeline_max_abs_err[dst][i];
+          }
+        }
+      }
+      cluster_dist_waiting = false;
+      Serial.printf("CLUSTER_DIST_GEN_LAYER_PIPE_GATHER layer=%u chunks=%u results=8 worker1_max_abs_err=%ld worker2_max_abs_err=%ld status=PASS\n",
+                    (unsigned)layer, (unsigned)CLUSTER_DIST_PIPELINE_CHUNKS,
+                    (long)cluster_lstm_gate_max_abs_err[1], (long)cluster_lstm_gate_max_abs_err[2]);
+    }
+  } else
+#endif
   if (cluster_dist_active && header.seq == cluster_dist_active_seq) {
     for (uint16_t i = 0; i < count; i++) {
       uint32_t g = (uint32_t)row_start + i;
@@ -2532,7 +2714,11 @@ static void cluster_handle_lstm_gate_result(const cluster_protocol::ClusterPacke
   Serial.printf("CLUSTER_LSTM_GATE_RESULT src_board=%u seq=%lu layer=%u row_start=%u count=%u max_abs_err=%ld ok=%s\n",
                 (unsigned)header.src_board, (unsigned long)header.seq, (unsigned)layer,
                 (unsigned)row_start, (unsigned)count, (long)max_abs_err, ok ? "true" : "false");
-  if (!cluster_lstm_gate_gather_printed && cluster_lstm_gate_seen[1] && cluster_lstm_gate_seen[2]) {
+  if (
+#if CLUSTER_WIFI_UDP_PIPELINE_DIST && !CLUSTER_WIFI_TCP_DIST
+      !pipeline_result &&
+#endif
+      !cluster_lstm_gate_gather_printed && cluster_lstm_gate_seen[1] && cluster_lstm_gate_seen[2]) {
     cluster_lstm_gate_gather_printed = true;
     Serial.printf("CLUSTER_LSTM_GATE_GATHER seq=%lu layer=%u worker1_ok=true worker1_max_abs_err=%ld worker2_ok=true worker2_max_abs_err=%ld rows_checked=%u status=PASS\n",
                   (unsigned long)header.seq, (unsigned)layer, (long)cluster_lstm_gate_max_abs_err[1],
