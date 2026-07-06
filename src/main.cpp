@@ -183,6 +183,7 @@ static const char *UTILITY_SEEDS[UTILITY_SEED_COUNT] = {
 static bool cluster_model_init_for_role(bool coordinator);
 static bool cluster_model_init_full_local();
 static void cluster_local_generator_tick(uint32_t now);
+static inline void model_init_pump_watchdog();
 static bool cluster_prepare_fc_request_from_prompt(const char *prompt, uint8_t prompt_id, int8_t *hidden_q8,
                                                    float *hidden_scale_out, uint8_t *local_token_out,
                                                    float *local_logit_out);
@@ -1348,6 +1349,9 @@ static void cluster_setup_wifi_demo() {
 #if CLUSTER_ENABLE_HTTP_UPDATE
   cluster_setup_http_update();
 #endif
+  // Feed RTC WDT before model init starts; the HTTP update server setup
+  // can take long enough to trigger TG1WDT.
+  model_init_pump_watchdog();
 #if CLUSTER_WIFI_LOCAL_GENERATOR
   cluster_model_ready = cluster_model_init_full_local();
   Serial.printf("CLUSTER_MODEL_READY board_id=%u ok=%u role=%s mode=local_generator\n", (unsigned)CLUSTER_BOARD_ID,
@@ -1837,6 +1841,58 @@ char idx_vocab(int idx) {
   return VOCAB[idx];
 }
 
+static inline void model_init_pump_watchdog() {
+  // H512 init can spend seconds cloning PSRAM payloads and packing recurrent
+  // matrices before the main loop starts servicing WiFi. Yield explicitly so
+  // the task watchdog does not reset the coordinator mid-load.
+  yield();
+  delay(0);
+  // Feed the RTC hardware WDT to prevent TG1WDT reset.
+  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0x50D83AA1);
+  WRITE_PERI_REG(RTC_CNTL_WDTCONFIG0_REG, 0x32 << 2 | RTC_CNTL_WDT_EN);
+  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0);
+}
+
+static void model_init_copy_payload(uint8_t *dst, const uint8_t *src, uint32_t len) {
+  static const uint32_t kChunk = 4096;
+  uint32_t offset = 0;
+  while (offset < len) {
+    uint32_t n = len - offset;
+    if (n > kChunk) n = kChunk;
+    memcpy(dst + offset, src + offset, n);
+    offset += n;
+    model_init_pump_watchdog();
+  }
+}
+
+static void model_init_suspend_watchdogs() {
+  // TG1WDT is the hardware timer watchdog, separate from the Task WDT.
+  // It fires during long PSRAM clone/convert operations. Disable it
+  // along with the Arduino task WDT during model init.
+  disableLoopWDT();
+  disableCore0WDT();
+#ifndef CONFIG_FREERTOS_UNICORE
+  disableCore1WDT();
+#endif
+  // Hardware TG1 watchdog: feed RTC WDT to prevent reset during init.
+  // We write the protect key, reset the WDT counter, then lock.
+  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0x50D83AA1);
+  WRITE_PERI_REG(RTC_CNTL_WDTCONFIG0_REG, 0x32 << 2 | RTC_CNTL_WDT_EN);
+  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0);
+}
+
+static void model_init_resume_watchdogs() {
+  enableLoopWDT();
+  enableCore0WDT();
+#ifndef CONFIG_FREERTOS_UNICORE
+  enableCore1WDT();
+#endif
+  // Feed RTC hardware WDT.
+  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0x50D83AA1);
+  WRITE_PERI_REG(RTC_CNTL_WDTCONFIG0_REG, 0x32 << 2 | RTC_CNTL_WDT_EN);
+  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0);
+}
+
 bool load_model_partition() {
   const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t)0x40, "weights");
   if (!part) {
@@ -1853,6 +1909,20 @@ bool load_model_partition() {
   model.base = (const uint8_t *)mapped;
   model.len = part->size;
   const uint8_t *p = model.base;
+  const uint8_t *end = model.base + model.len;
+  auto rilm_offset = [&]() -> unsigned long { return (unsigned long)(p - model.base); };
+  auto need = [&](uint32_t n, const char *phase, uint32_t tensor_idx) -> bool {
+    if ((uint32_t)(end - p) < n) {
+      Serial.printf("RILM_BOUNDS_ERROR phase=%s tensor=%lu offset=%lu need=%lu remaining=%lu model_len=%lu\n",
+                    phase, (unsigned long)tensor_idx, rilm_offset(), (unsigned long)n,
+                    (unsigned long)(end - p), (unsigned long)model.len);
+      Serial.flush();
+      return false;
+    }
+    return true;
+  };
+
+  if (!need(12, "header", 0)) return false;
   uint32_t magic = rd_u32(p);
   if (magic != MAGIC) {
     Serial.printf("ERR bad magic 0x%08lx\n", (unsigned long)magic);
@@ -1866,8 +1936,11 @@ bool load_model_partition() {
     return false;
   }
   Serial.printf("RILM version=%u tensors=%lu\n", version, (unsigned long)model.tensor_count);
+  Serial.flush();
   for (uint32_t i = 0; i < model.tensor_count; i++) {
+    if (!need(2, "name_len", i)) return false;
     uint16_t actual_name_len = rd_u16(p);
+    if (!need(actual_name_len + 2, "name_dtype_ndim", i)) return false;
     uint16_t stored_name_len = actual_name_len;
     if (stored_name_len >= sizeof(model.tensors[i].name)) stored_name_len = sizeof(model.tensors[i].name) - 1;
     memcpy(model.tensors[i].name, p, stored_name_len);
@@ -1875,12 +1948,32 @@ bool load_model_partition() {
     p += actual_name_len;
     model.tensors[i].dtype = *p++;
     model.tensors[i].ndim = *p++;
+    if (model.tensors[i].ndim > 8) {
+      Serial.printf("RILM_BOUNDS_ERROR phase=ndim tensor=%lu offset=%lu ndim=%u model_len=%lu\n",
+                    (unsigned long)i, rilm_offset(), (unsigned)model.tensors[i].ndim,
+                    (unsigned long)model.len);
+      Serial.flush();
+      return false;
+    }
+    if (!need((uint32_t)model.tensors[i].ndim * 4u + 8u, "dims_scale_payload_len", i)) return false;
+    model.tensors[i].dims[0] = 0;
+    model.tensors[i].dims[1] = 0;
     for (uint8_t d = 0; d < model.tensors[i].ndim && d < 2; d++) model.tensors[i].dims[d] = rd_u32(p);
     for (uint8_t d = 2; d < model.tensors[i].ndim; d++) (void)rd_u32(p);
     model.tensors[i].scale = rd_f32(p);
     model.tensors[i].payload_len = rd_u32(p);
+    if (!need(model.tensors[i].payload_len, "payload", i)) return false;
     model.tensors[i].payload = p;
+    Serial.printf("RILM_TENSOR index=%lu name=%s dtype=%u ndim=%u dim0=%lu dim1=%lu scale=%g payload_len=%lu payload_offset=%lu next_offset=%lu model_len=%lu\n",
+                  (unsigned long)i, model.tensors[i].name, (unsigned)model.tensors[i].dtype,
+                  (unsigned)model.tensors[i].ndim, (unsigned long)model.tensors[i].dims[0],
+                  (unsigned long)model.tensors[i].dims[1], (double)model.tensors[i].scale,
+                  (unsigned long)model.tensors[i].payload_len, rilm_offset(),
+                  (unsigned long)(rilm_offset() + model.tensors[i].payload_len),
+                  (unsigned long)model.len);
+    Serial.flush();
     p += model.tensors[i].payload_len;
+    model_init_pump_watchdog();
   }
   return true;
 }
@@ -1897,9 +1990,10 @@ bool clone_payloads_to_psram() {
       Serial.printf("ERR payload clone failed %s %lu bytes\n", t->name, (unsigned long)t->payload_len);
       return false;
     }
-    memcpy(copy, t->payload, t->payload_len);
+    model_init_copy_payload(copy, t->payload, t->payload_len);
     t->payload = copy;
     copied += t->payload_len;
+    model_init_pump_watchdog();
   }
   Serial.printf("payloads cloned bytes=%lu free_heap=%lu free_psram=%lu\n", (unsigned long)copied, (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram());
   return true;
@@ -1929,6 +2023,7 @@ bool convert_wih_to_int4() {
       if (q0 > 7) q0 = 7; if (q0 < -8) q0 = -8;
       if (q1 > 7) q1 = 7; if (q1 < -8) q1 = -8;
       packed[j >> 1] = (uint8_t)((q0 & 0x0F) | ((q1 & 0x0F) << 4));
+      if ((j & 0x1FFFu) == 0) model_init_pump_watchdog();
     }
 
     t->payload = packed;
@@ -2185,10 +2280,15 @@ static const char *cluster_prompt_for_id(uint8_t prompt_id) {
 }
 
 static bool cluster_model_init_for_role(bool coordinator) {
+  // Suspend WDT before ANY heavy work, including core0 task creation.
+  // The core0 worker blocks on core1_start_sem during model init; its idle
+  // task WDT will fire if we create it before suspending.
+  model_init_suspend_watchdogs();
   if (coordinator) {
     core1_start_sem = xSemaphoreCreateBinary();
     core1_done_sem = xSemaphoreCreateBinary();
     if (!core1_start_sem || !core1_done_sem) {
+      model_init_resume_watchdogs();
       Serial.println("CLUSTER_MODEL_ERROR phase=semaphore");
       return false;
     }
@@ -2196,6 +2296,7 @@ static bool cluster_model_init_for_role(bool coordinator) {
     core1_active = true;
   }
   if (!coordinator) {
+    model_init_resume_watchdogs();
 #if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_LSTM_SHARD
     return load_lstm_shard_partition();
 #elif CLUSTER_ROLE_WORKER && CLUSTER_WIFI_SHARDED_INFERENCE
@@ -2214,49 +2315,59 @@ static bool cluster_model_init_for_role(bool coordinator) {
 #endif
   }
 
-  if (!load_model_partition()) { Serial.println("CLUSTER_MODEL_ERROR phase=load_partition"); return false; }
+  // WDT already suspended at top of function.
+
+  bool ok = true;
+  if (!load_model_partition()) { Serial.println("CLUSTER_MODEL_ERROR phase=load_partition"); ok = false; }
 
   // Coordinator runs the recurrent pass, so it needs the fast p22 memory layout:
   // cloned tensors plus int4 recurrent weights and SRAM scratch/state. Workers only
   // compute their FC vocabulary row shard from a coordinator-supplied hidden vector.
   // The worker FC head is embedded into the app firmware, so workers do not need a
   // data/weights partition or full recurrent model materialization.
-  if (!clone_payloads_to_psram()) { Serial.println("CLUSTER_MODEL_ERROR phase=clone_payloads"); return false; }
-  if (!convert_wih_to_int4()) { Serial.println("CLUSTER_MODEL_ERROR phase=int4_convert"); return false; }
+  if (ok && !clone_payloads_to_psram()) { Serial.println("CLUSTER_MODEL_ERROR phase=clone_payloads"); ok = false; }
+  if (ok && !convert_wih_to_int4()) { Serial.println("CLUSTER_MODEL_ERROR phase=int4_convert"); ok = false; }
 
-  if (!resolve_model()) { Serial.println("CLUSTER_MODEL_ERROR phase=resolve"); return false; }
-  if (resolved.fcw->dims[1] != HIDDEN || resolved.fcw->dims[0] != VOCAB_SIZE) {
+  if (ok && !resolve_model()) { Serial.println("CLUSTER_MODEL_ERROR phase=resolve"); ok = false; }
+  if (ok && (resolved.fcw->dims[1] != HIDDEN || resolved.fcw->dims[0] != VOCAB_SIZE)) {
     Serial.printf("CLUSTER_MODEL_ERROR phase=fc_shape rows=%lu cols=%lu expected_rows=%u expected_cols=%u\n",
                   (unsigned long)resolved.fcw->dims[0], (unsigned long)resolved.fcw->dims[1],
                   (unsigned)VOCAB_SIZE, (unsigned)HIDDEN);
-    return false;
+    ok = false;
   }
-  if (coordinator) {
+  if (ok && coordinator) {
     init_activation_lut();
     alloc_state();
   }
-  return true;
+  model_init_resume_watchdogs();
+  return ok;
 }
 
 static bool cluster_model_init_full_local() {
+  model_init_suspend_watchdogs();
   core1_start_sem = xSemaphoreCreateBinary();
   core1_done_sem = xSemaphoreCreateBinary();
   if (!core1_start_sem || !core1_done_sem) {
+    model_init_resume_watchdogs();
     Serial.println("CLUSTER_MODEL_ERROR phase=semaphore mode=local_generator");
     return false;
   }
   xTaskCreatePinnedToCore(core0_worker, "lstm_worker", 16384, nullptr, 2, nullptr, 0);
   core1_active = true;
-  if (!load_model_partition()) { Serial.println("CLUSTER_MODEL_ERROR phase=load_partition mode=local_generator"); return false; }
-  if (!clone_payloads_to_psram()) { Serial.println("CLUSTER_MODEL_ERROR phase=clone_payloads mode=local_generator"); return false; }
-  if (!convert_wih_to_int4()) { Serial.println("CLUSTER_MODEL_ERROR phase=int4_convert mode=local_generator"); return false; }
-  if (!resolve_model()) { Serial.println("CLUSTER_MODEL_ERROR phase=resolve mode=local_generator"); return false; }
-  init_activation_lut();
-  alloc_state();
-  Serial.printf("CLUSTER_MODEL_LOCAL_GENERATOR_READY board_id=%u profile=%s params=%lu hidden=%u layers=%u weights_sha256=%s\n",
-                (unsigned)CLUSTER_BOARD_ID, RI_MODEL_PROFILE, (unsigned long)RI_MODEL_PARAMS,
-                (unsigned)HIDDEN, (unsigned)LAYERS, WEIGHTS_SHA256);
-  return true;
+  bool ok = true;
+  if (!load_model_partition()) { Serial.println("CLUSTER_MODEL_ERROR phase=load_partition mode=local_generator"); ok = false; }
+  if (ok && !clone_payloads_to_psram()) { Serial.println("CLUSTER_MODEL_ERROR phase=clone_payloads mode=local_generator"); ok = false; }
+  if (ok && !convert_wih_to_int4()) { Serial.println("CLUSTER_MODEL_ERROR phase=int4_convert mode=local_generator"); ok = false; }
+  if (ok && !resolve_model()) { Serial.println("CLUSTER_MODEL_ERROR phase=resolve mode=local_generator"); ok = false; }
+  if (ok) {
+    init_activation_lut();
+    alloc_state();
+    Serial.printf("CLUSTER_MODEL_LOCAL_GENERATOR_READY board_id=%u profile=%s params=%lu hidden=%u layers=%u weights_sha256=%s\n",
+                  (unsigned)CLUSTER_BOARD_ID, RI_MODEL_PROFILE, (unsigned long)RI_MODEL_PARAMS,
+                  (unsigned)HIDDEN, (unsigned)LAYERS, WEIGHTS_SHA256);
+  }
+  model_init_resume_watchdogs();
+  return ok;
 }
 
 static bool cluster_compute_fc_shard(uint8_t worker_board, const int8_t *hidden_q8, float hidden_scale,
