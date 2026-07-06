@@ -1,0 +1,70 @@
+Device: cpu
+Model: H=768 L=3 V=34
+Params: 14,226,466
+  embed: 26,112
+  layer 0: ih=2,359,296 hh=2,359,296 bias=3,072
+  layer 1: ih=2,359,296 hh=2,359,296 bias=3,072
+  layer 2: ih=2,359,296 hh=2,359,296 bias=3,072
+  fc: 26,112
+  total: 14,226,466
+Loading corpus from /home/sikmindz/projects/dying-llm/training/tinystories.txt...
+  loaded 2,000,000 chars
+Encoded 2,000,000 tokens
+Starting training...
+  epoch 1/2 step 100 loss=2.8745 batches=100 elapsed=179.5s
+  epoch 1/2 step 200 loss=2.6500 batches=200 elapsed=307.3s
+  epoch 1/2 step 300 loss=2.5384 batches=300 elapsed=447.9s
+  epoch 1/2 step 400 loss=2.4266 batches=400 elapsed=592.5s
+  epoch 1/2 step 500 loss=2.3176 batches=500 elapsed=714.8s
+  epoch 1/2 step 600 loss=2.2284 batches=600 elapsed=821.1s
+  epoch 1/2 step 700 loss=2.1621 batches=700 elapsed=917.5s
+  epoch 1/2 step 800 loss=2.1085 batches=800 elapsed=1031.9s
+  epoch 1/2 step 900 loss=2.0558 batches=900 elapsed=1177.4s
+  epoch 1 done: avg_loss=2.0223 time=1232.9s
+  epoch 2/2 step 1000 loss=1.5499 batches=39 elapsed=82.5s
+  epoch 2/2 step 1100 loss=1.5544 batches=139 elapsed=865.2s
+  epoch 2/2 step 1200 loss=1.5232 batches=239 elapsed=1086.9s
+  epoch 2/2 step 1300 loss=1.5005 batches=339 elapsed=1241.0s
+  epoch 2/2 step 1400 loss=1.4728 batches=439 elapsed=1398.0s
+  epoch 2/2 step 1500 loss=1.4545 batches=539 elapsed=1533.1s
+  epoch 2/2 step 1600 loss=1.4361 batches=639 elapsed=1646.9s
+  epoch 2/2 step 1700 loss=1.4279 batches=739 elapsed=1751.5s
+  epoch 2/2 step 1800 loss=1.4171 batches=839 elapsed=1843.3s
+  epoch 2/2 step 1900 loss=1.4095 batches=939 elapsed=1949.4s
+  epoch 2 done: avg_loss=1.4062 time=1978.5s
+Evaluation samples:
+  prompt='once upon a ' -> 'once upon a she wathing aily put to hext proud. at to he thoness to see ays '
+  prompt='there was a ' -> 'there was a he didn't trecause something with her time and fish. ae ways sou'
+  prompt='one day, a ' -> 'one day, a always the littless and ride. aily knew his pare around. an a bi'
+  prompt='the little ' -> 'the little as eat that he came pot blomed. aax together the butter and sad.'
+  prompt='she said, ' -> 'she said, her bove a playbually sat to stily. ahey said to learnta, the co'
+Exporting RILM binary...
+Exported RILM to weights_h768_tinystories.bin
+  size=14,282,368 bytes
+  sha256=4b7e77a04b345ba993cd668d14b5ace28f62520461c258144070ca63972641bf
+  profile=tinystories_h768_all_int4
+  tensors=15
+  params=14,226,466
+Exporting layer-shard RILM files (one per board)...
+Exporting layer-shard RILM files:
+  weights_h768_tinystories_layer_shard_board0.bin: 4,795,760 bytes sha256=373f874d896e4024... tensors=7
+  weights_h768_tinystories_layer_shard_board1.bin: 4,743,316 bytes sha256=9bf64987c25d9493... tensors=4
+  weights_h768_tinystories_layer_shard_board2.bin: 4,743,316 bytes sha256=53db1e6287889418... tensors=4
+Layer-shard export complete. Total: 14,282,392 bytes
+Saved PyTorch state to weights_h768_tinystories.bin.pt
+
+Done. Full model flash to ESP32-S3 with:
+  esptool.py --chip esp32s3 --port /dev/ttyACM0 write_flash 0x210000 weights_h768_tinystories.bin
+
+Layer-shard flash (one per board):
+  board0: esptool.py ... write_flash 0x210000 weights_h768_tinystories_layer_shard_board0.bin (4,795,760 bytes)
+  board1: esptool.py ... write_flash 0x210000 weights_h768_tinystories_layer_shard_board1.bin (4,743,316 bytes)
+  board2: esptool.py ... write_flash 0x210000 weights_h768_tinystories_layer_shard_board2.bin (4,743,316 bytes)
+
+Build flags needed in platformio.ini:
+  -D RI_HIDDEN=768
+  -D RI_LAYERS=3
+  -D RI_WEIGHTS_SHA256="4b7e77a04b345ba993cd668d14b5ace28f62520461c258144070ca63972641bf"
+  -D RI_MODEL_PROFILE="tinystories_h768_all_int4"
+  -D RI_MODEL_PARAMS=14226466
+  -D RI_COMPRESSED_BYTES=14282368
