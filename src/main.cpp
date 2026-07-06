@@ -206,6 +206,14 @@ static void cluster_handle_lstm_gate_result(const cluster_protocol::ClusterPacke
                                             const uint8_t *payload, size_t payload_len);
 static void cluster_distributed_generation_tick(uint32_t now);
 #endif
+#if CLUSTER_WIFI_LAYER_SHARD
+static bool cluster_model_init_layer_shard();
+static void cluster_layer_shard_generation_tick(uint32_t now);
+static void cluster_handle_layer_shard_state_result(const cluster_protocol::ClusterPacketHeader &header,
+                                                     const uint8_t *payload, size_t payload_len);
+static void cluster_handle_layer_shard_state_request(const cluster_protocol::ClusterPacketHeader &header,
+                                                      const uint8_t *payload, size_t payload_len);
+#endif
 
 
 static WiFiUDP cluster_udp;
@@ -297,8 +305,28 @@ static bool cluster_worker_ip_known[3] = {false, false, false};
 #if CLUSTER_WIFI_LAYER_SHARD
 static bool cluster_layer_shard_smoke_sent = false;
 static uint32_t cluster_layer_shard_seq = 3000;
-static uint8_t cluster_layer_shard_qx[cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN] = {0};
-static uint8_t cluster_layer_shard_qc[cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN] = {0};
+static uint8_t cluster_layer_shard_qx[cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN] __attribute__((aligned(16))) = {0};
+static uint8_t cluster_layer_shard_qc[cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN] __attribute__((aligned(16))) = {0};
+// --- Real generation state ---
+static bool cluster_layer_shard_gen_started = false;
+static bool cluster_layer_shard_gen_active = false;
+static bool cluster_layer_shard_gen_waiting_b1 = false;
+static bool cluster_layer_shard_gen_waiting_b2 = false;
+static uint32_t cluster_layer_shard_gen_seq_b1 = 0;
+static uint32_t cluster_layer_shard_gen_seq_b2 = 0;
+static uint32_t cluster_layer_shard_gen_last_send_b1_ms = 0;
+static uint32_t cluster_layer_shard_gen_last_send_b2_ms = 0;
+static float cluster_layer_shard_h_scale = 1.0f;
+static float cluster_layer_shard_c_scale = 1.0f;
+static uint8_t cluster_layer_shard_result_qx[cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN] __attribute__((aligned(16)));
+static uint8_t cluster_layer_shard_result_qc[cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN] __attribute__((aligned(16)));
+static float cluster_layer_shard_result_h_scale = 1.0f;
+static float cluster_layer_shard_result_c_scale = 1.0f;
+static bool cluster_layer_shard_b1_result_ready = false;
+static bool cluster_layer_shard_b2_result_ready = false;
+static int cluster_layer_shard_output_token = -1;
+static float cluster_layer_shard_output_logit = 0.0f;
+static uint32_t cluster_layer_shard_gen_started_ms = 0;
 #endif
 #endif
 static constexpr uint8_t CLUSTER_BROADCAST_BOARD = 255;
@@ -1198,51 +1226,15 @@ static void cluster_handle_udp_packet() {
   }
 
   if (header.msg_type == cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_REQUEST) {
-#if CLUSTER_ROLE_WORKER && CLUSTER_WIFI_LAYER_SHARD
-    if (header.dst_board == CLUSTER_BROADCAST_BOARD || header.dst_board == (uint8_t)CLUSTER_BOARD_ID) {
-      cluster_protocol::ClusterLstmStateForwardRequest request;
-      if (!cluster_protocol::decode_lstm_state_forward_request_payload(payload, payload_len, &request)) {
-        Serial.printf("CLUSTER_LAYER_SHARD_DROP reason=bad_state_request_payload src_board=%u seq=%lu\n",
-                      (unsigned)header.src_board, (unsigned long)header.seq);
-        return;
-      }
-      Serial.printf("CLUSTER_LAYER_SHARD_STATE_REQUEST board_id=%u seq=%lu token=%u layer_start=%u layer_count=%u decoded=true\n",
-                    (unsigned)CLUSTER_BOARD_ID, (unsigned long)header.seq, (unsigned)request.token_id,
-                    (unsigned)request.layer_start, (unsigned)request.layer_count);
-
-      cluster_protocol::ClusterLstmStateForwardResult result;
-      result.layer_end = (uint8_t)(request.layer_start + request.layer_count);
-      result.hidden_scale = request.hidden_scale;
-      result.cell_scale = request.cell_scale;
-      result.qx = request.qx;
-      result.qc = request.qc;
-      static uint8_t result_payload[cluster_protocol::CLUSTER_LSTM_STATE_FORWARD_RESULT_PAYLOAD_SIZE];
-      bool encoded = cluster_protocol::encode_lstm_state_forward_result_payload(
-          result, result_payload, sizeof(result_payload));
-      bool ok = encoded && cluster_send_packet(cluster_udp.remoteIP(), cluster_udp.remotePort(),
-                                               cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_RESULT,
-                                               header.src_board, header.seq, result_payload,
-                                               sizeof(result_payload));
-      if (!ok) {
-        Serial.printf("CLUSTER_LAYER_SHARD_DROP reason=state_result_send_failed board_id=%u seq=%lu encoded=%s\n",
-                      (unsigned)CLUSTER_BOARD_ID, (unsigned long)header.seq,
-                      encoded ? "true" : "false");
-      }
-    }
+#if CLUSTER_WIFI_LAYER_SHARD
+    cluster_handle_layer_shard_state_request(header, payload, payload_len);
 #endif
     return;
   }
 
   if (header.msg_type == cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_RESULT) {
 #if CLUSTER_ROLE_COORD && CLUSTER_WIFI_LAYER_SHARD
-    cluster_protocol::ClusterLstmStateForwardResult result;
-    if (!cluster_protocol::decode_lstm_state_forward_result_payload(payload, payload_len, &result)) {
-      Serial.printf("CLUSTER_LAYER_SHARD_DROP reason=bad_state_result_payload src_board=%u seq=%lu\n",
-                    (unsigned)header.src_board, (unsigned long)header.seq);
-      return;
-    }
-    Serial.printf("CLUSTER_LAYER_SHARD_STATE_RESULT src_board=%u seq=%lu layer_end=%u decoded=true\n",
-                  (unsigned)header.src_board, (unsigned long)header.seq, (unsigned)result.layer_end);
+    cluster_handle_layer_shard_state_result(header, payload, payload_len);
 #endif
     return;
   }
@@ -1359,6 +1351,10 @@ static void cluster_setup_wifi_demo() {
   cluster_model_ready = cluster_model_init_full_local();
   Serial.printf("CLUSTER_MODEL_READY board_id=%u ok=%u role=%s mode=local_generator\n", (unsigned)CLUSTER_BOARD_ID,
                 cluster_model_ready ? 1 : 0, CLUSTER_ROLE_COORD ? "coord" : "worker");
+#elif CLUSTER_WIFI_LAYER_SHARD
+  cluster_model_ready = cluster_model_init_layer_shard();
+  Serial.printf("CLUSTER_MODEL_READY board_id=%u ok=%u role=%s mode=layer_shard\n", (unsigned)CLUSTER_BOARD_ID,
+                cluster_model_ready ? 1 : 0, CLUSTER_ROLE_COORD ? "coord" : "worker");
 #elif CLUSTER_WIFI_SHARDED_INFERENCE || CLUSTER_WIFI_LSTM_SHARD
   cluster_model_ready = cluster_model_init_for_role(CLUSTER_ROLE_COORD != 0);
   Serial.printf("CLUSTER_MODEL_READY board_id=%u ok=%u role=%s\n", (unsigned)CLUSTER_BOARD_ID,
@@ -1366,48 +1362,7 @@ static void cluster_setup_wifi_demo() {
 #endif
 }
 
-#if CLUSTER_ROLE_COORD && CLUSTER_WIFI_LAYER_SHARD
-static void cluster_layer_shard_smoke_tick(uint32_t now) {
-  if (now - cluster_last_ping_ms >= 2000) {
-    cluster_last_ping_ms = now;
-    uint32_t ping_seq = cluster_ping_seq++;
-    bool ping_ok = cluster_send_packet(CLUSTER_AP_BROADCAST, CLUSTER_WIFI_UDP_PORT,
-                                       cluster_protocol::CLUSTER_MSG_PING,
-                                       CLUSTER_BROADCAST_BOARD, ping_seq);
-    Serial.printf("CLUSTER_WIFI_PING_BROADCAST seq=%lu dst=%s port=%u sent=%s reason=layer_shard_discovery\n",
-                  (unsigned long)ping_seq, CLUSTER_AP_BROADCAST.toString().c_str(),
-                  (unsigned)CLUSTER_WIFI_UDP_PORT, ping_ok ? "true" : "false");
-  }
 
-  if (cluster_layer_shard_smoke_sent || !cluster_model_ready || now < 12000) return;
-  if (!cluster_worker_ip_known[1] || !cluster_worker_ip_known[2]) return;
-
-  const uint32_t seq = cluster_layer_shard_seq++;
-  for (uint8_t dst = 1; dst <= 2; dst++) {
-    cluster_protocol::ClusterLstmStateForwardRequest request;
-    request.token_id = 19;
-    request.layer_start = dst;
-    request.layer_count = 1;
-    request.hidden_scale = 1.0f;
-    request.cell_scale = 1.0f;
-    request.qx = cluster_layer_shard_qx;
-    request.qc = cluster_layer_shard_qc;
-
-    uint8_t request_payload[cluster_protocol::CLUSTER_LSTM_STATE_FORWARD_REQUEST_PAYLOAD_SIZE];
-    bool encoded = cluster_protocol::encode_lstm_state_forward_request_payload(
-        request, request_payload, sizeof(request_payload));
-    IPAddress target = cluster_worker_ips[dst];
-    bool sent = encoded && cluster_send_packet(target, CLUSTER_WIFI_UDP_PORT,
-                                               cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_REQUEST,
-                                               dst, seq, request_payload, sizeof(request_payload));
-    Serial.printf("CLUSTER_LAYER_SHARD_STATE_SEND seq=%lu dst=%u target=%s token=%u layer_start=%u layer_count=%u sent=%s\n",
-                  (unsigned long)seq, (unsigned)dst, target.toString().c_str(),
-                  (unsigned)request.token_id, (unsigned)request.layer_start,
-                  (unsigned)request.layer_count, sent ? "true" : "false");
-  }
-  cluster_layer_shard_smoke_sent = true;
-}
-#endif
 
 static void cluster_loop_wifi_demo() {
 #if CLUSTER_ENABLE_OTA
@@ -1427,7 +1382,7 @@ static void cluster_loop_wifi_demo() {
   cluster_handle_tcp_io(now);
 #endif
 #if CLUSTER_WIFI_LAYER_SHARD
-  cluster_layer_shard_smoke_tick(now);
+  cluster_layer_shard_generation_tick(now);
 #endif
 #if CLUSTER_WIFI_PING_ONLY
   if (now - cluster_last_ping_ms >= 2000) {
@@ -2043,7 +1998,12 @@ bool convert_wih_to_int4() {
   // mixed_lstm_safe TinyStories H512 already stores input matrices as int4 and only
   // needs recurrent matrices converted at boot (LAYERS). Anything below LAYERS means
   // a layer is missing a packed/convertible recurrent path.
+  // In layer-shard mode, each board only has its single layer's weights, so accept >= 1.
+#if CLUSTER_WIFI_LAYER_SHARD
+  return converted >= 1;
+#else
   return converted >= LAYERS;
+#endif
 }
 
 bool resolve_model() {
@@ -2067,6 +2027,49 @@ bool resolve_model() {
   }
   resolved.ok = resolved.embed && resolved.fcw && resolved.fcb;
   if (!resolved.ok) Serial.println("ERR unresolved embed/fc");
+  return resolved.ok;
+}
+
+bool resolve_model_layer_shard() {
+  // Layer-shard mode: resolve only the tensors present in this board's partition.
+  // Board 0 (coordinator): embed + layer 0 + fc. Boards 1/2: single LSTM layer.
+  resolved.embed = find_tensor("embed.weight");
+  resolved.fcw = find_tensor("fc.weight");
+  resolved.fcb = find_tensor("fc.bias");
+  const int board_layer = (int)CLUSTER_BOARD_ID;
+  for (int l = 0; l < LAYERS; l++) {
+    char name[32];
+    snprintf(name, sizeof(name), "lstm.weight_ih_l%d", l);
+    resolved.wih[l] = find_tensor(name);
+    snprintf(name, sizeof(name), "lstm.weight_hh_l%d", l);
+    resolved.whh[l] = find_tensor(name);
+    snprintf(name, sizeof(name), "lstm.bias_ih_l%d", l);
+    resolved.bih[l] = find_tensor(name);
+    snprintf(name, sizeof(name), "lstm.bias_hh_l%d", l);
+    resolved.bhh[l] = find_tensor(name);
+  }
+  // Validate this board's assigned layer
+  if (!resolved.wih[board_layer] || !resolved.whh[board_layer] || !resolved.bih[board_layer]) {
+    Serial.printf("ERR layer_shard unresolved layer %d for board_id=%d\n", board_layer, board_layer);
+    return false;
+  }
+  // Coordinator (board 0) also needs embed and fc
+  if (board_layer == 0) {
+    if (!resolved.embed || !resolved.fcw || !resolved.fcb) {
+      Serial.println("ERR layer_shard coordinator missing embed/fc");
+      return false;
+    }
+  }
+  resolved.ok = true;
+  Serial.printf("LAYER_SHARD_RESOLVED board_id=%d layer=%d embed=%s fcw=%s fcb=%s wih=%s whh=%s bih=%s bhh=%s\n",
+                board_layer, board_layer,
+                resolved.embed ? "yes" : "no",
+                resolved.fcw ? "yes" : "no",
+                resolved.fcb ? "yes" : "no",
+                resolved.wih[board_layer] ? "yes" : "no",
+                resolved.whh[board_layer] ? "yes" : "no",
+                resolved.bih[board_layer] ? "yes" : "no",
+                resolved.bhh[board_layer] ? "yes" : "no");
   return resolved.ok;
 }
 
@@ -2371,6 +2374,311 @@ static bool cluster_model_init_full_local() {
   model_init_resume_watchdogs();
   return ok;
 }
+
+static bool cluster_model_init_layer_shard() {
+  model_init_suspend_watchdogs();
+
+  // All boards need the core0 worker for dual-core LSTM gate computation
+  core1_start_sem = xSemaphoreCreateBinary();
+  core1_done_sem = xSemaphoreCreateBinary();
+  if (!core1_start_sem || !core1_done_sem) {
+    model_init_resume_watchdogs();
+    Serial.println("CLUSTER_MODEL_ERROR phase=semaphore mode=layer_shard");
+    return false;
+  }
+  xTaskCreatePinnedToCore(core0_worker, "lstm_worker", 16384, nullptr, 2, nullptr, 0);
+  core1_active = true;
+
+  bool ok = true;
+  if (!load_model_partition()) { Serial.println("CLUSTER_MODEL_ERROR phase=load_partition mode=layer_shard"); ok = false; }
+  if (ok && !clone_payloads_to_psram()) { Serial.println("CLUSTER_MODEL_ERROR phase=clone_payloads mode=layer_shard"); ok = false; }
+  if (ok && !convert_wih_to_int4()) { Serial.println("CLUSTER_MODEL_ERROR phase=int4_convert mode=layer_shard"); ok = false; }
+  if (ok && !resolve_model_layer_shard()) { Serial.println("CLUSTER_MODEL_ERROR phase=resolve_layer_shard"); ok = false; }
+
+  if (ok) {
+    init_activation_lut();
+    alloc_state();
+    Serial.printf("CLUSTER_MODEL_LAYER_SHARD_READY board_id=%u layer=%d profile=%s hidden=%u layers=%u\n",
+                  (unsigned)CLUSTER_BOARD_ID, (int)CLUSTER_BOARD_ID,
+                  RI_MODEL_PROFILE, (unsigned)HIDDEN, (unsigned)LAYERS);
+  }
+  model_init_resume_watchdogs();
+  return ok;
+}
+
+#if CLUSTER_ROLE_COORD && CLUSTER_WIFI_LAYER_SHARD
+static void cluster_layer_shard_generation_tick(uint32_t now) {
+  // Discovery pings to find workers
+  if (now - cluster_last_ping_ms >= 2000) {
+    cluster_last_ping_ms = now;
+    uint32_t ping_seq = cluster_ping_seq++;
+    bool ping_ok = cluster_send_packet(CLUSTER_AP_BROADCAST, CLUSTER_WIFI_UDP_PORT,
+                                       cluster_protocol::CLUSTER_MSG_PING,
+                                       CLUSTER_BROADCAST_BOARD, ping_seq);
+    Serial.printf("CLUSTER_WIFI_PING_BROADCAST seq=%lu dst=%s port=%u sent=%s reason=layer_shard_discovery\n",
+                  (unsigned long)ping_seq, CLUSTER_AP_BROADCAST.toString().c_str(),
+                  (unsigned)CLUSTER_WIFI_UDP_PORT, ping_ok ? "true" : "false");
+  }
+
+  // Start generation: run once at now >= 12000 after both workers PONG
+  if (!cluster_layer_shard_gen_started && !cluster_layer_shard_gen_active &&
+      cluster_model_ready && now >= 12000 &&
+      cluster_worker_ip_known[1] && cluster_worker_ip_known[2]) {
+    cluster_layer_shard_gen_started = true;
+    cluster_layer_shard_gen_active = true;
+    cluster_layer_shard_gen_started_ms = now;
+
+    // 1. Embedding lookup for input token
+    const char *prompt = "once upon a ";
+    size_t plen = strlen(prompt);
+    reset_state();
+    // Process prefix tokens through embed + layer 0
+    for (size_t i = 0; i < plen; i++) {
+      int tok = vocab_idx(prompt[i]);
+      // Embedding lookup
+      Tensor *embed = resolved.embed;
+      uint32_t row = (uint32_t)tok * HIDDEN;
+      if (embed->dtype == I4) {
+        for (int j = 0; j < HIDDEN; j += 2) {
+          uint8_t b = embed->payload[(row + j) >> 1];
+          st.x[j] = (float)signed_i4_low(b) * embed->scale;
+          st.x[j + 1] = (float)signed_i4_high(b) * embed->scale;
+        }
+      } else {
+        for (int j = 0; j < HIDDEN; j++) st.x[j] = tensor_get_slow(embed, row + j);
+      }
+      // Run layer 0 locally
+      lstm_layer(0, st.x, HIDDEN, false);
+      memcpy(st.x, st.h[0], sizeof(float) * HIDDEN);
+    }
+
+    // After prefix processing, st.x and st.h[0]/st.c[0] hold the final state
+    // Now quantize h[0] and c[0] for sending to board 1
+    cluster_layer_shard_h_scale = quantize_q8(st.h[0], (int8_t *)cluster_layer_shard_qx, HIDDEN);
+    cluster_layer_shard_c_scale = quantize_q8(st.c[0], (int8_t *)cluster_layer_shard_qc, HIDDEN);
+
+    Serial.printf("CLUSTER_LAYER_SHARD_GEN_START prompt=\"%s\" final_input=%c h_scale=%.9f c_scale=%.9f\n",
+                  prompt, plen ? prompt[plen - 1] : ' ',
+                  (double)cluster_layer_shard_h_scale, (double)cluster_layer_shard_c_scale);
+
+    // 2. Send state forward request to board 1 (layer 1)
+    cluster_layer_shard_gen_seq_b1 = cluster_layer_shard_seq++;
+    cluster_layer_shard_gen_waiting_b1 = true;
+    cluster_layer_shard_b1_result_ready = false;
+    cluster_layer_shard_gen_last_send_b1_ms = now;
+
+    cluster_protocol::ClusterLstmStateForwardRequest request;
+    request.token_id = 0;
+    request.layer_start = 1;
+    request.layer_count = 1;
+    request.hidden_scale = cluster_layer_shard_h_scale;
+    request.cell_scale = cluster_layer_shard_c_scale;
+    request.qx = cluster_layer_shard_qx;
+    request.qc = cluster_layer_shard_qc;
+
+    uint8_t request_payload[cluster_protocol::CLUSTER_LSTM_STATE_FORWARD_REQUEST_PAYLOAD_SIZE];
+    bool encoded = cluster_protocol::encode_lstm_state_forward_request_payload(
+        request, request_payload, sizeof(request_payload));
+    IPAddress target1 = cluster_worker_ips[1];
+    bool sent1 = encoded && cluster_send_packet(target1, CLUSTER_WIFI_UDP_PORT,
+                                                cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_REQUEST,
+                                                1, cluster_layer_shard_gen_seq_b1,
+                                                request_payload, sizeof(request_payload));
+    Serial.printf("CLUSTER_LAYER_SHARD_STATE_SEND seq=%lu dst=1 target=%s layer_start=1 sent=%s\n",
+                  (unsigned long)cluster_layer_shard_gen_seq_b1, target1.toString().c_str(),
+                  sent1 ? "true" : "false");
+    return;
+  }
+
+  // Retry logic for board 1
+  if (cluster_layer_shard_gen_active && cluster_layer_shard_gen_waiting_b1 &&
+      now - cluster_layer_shard_gen_last_send_b1_ms > 3000) {
+    Serial.printf("CLUSTER_LAYER_SHARD_RETRY_B1 seq=%lu\n", (unsigned long)cluster_layer_shard_gen_seq_b1);
+    cluster_layer_shard_gen_last_send_b1_ms = now;
+    cluster_protocol::ClusterLstmStateForwardRequest request;
+    request.token_id = 0;
+    request.layer_start = 1;
+    request.layer_count = 1;
+    request.hidden_scale = cluster_layer_shard_h_scale;
+    request.cell_scale = cluster_layer_shard_c_scale;
+    request.qx = cluster_layer_shard_qx;
+    request.qc = cluster_layer_shard_qc;
+    uint8_t request_payload[cluster_protocol::CLUSTER_LSTM_STATE_FORWARD_REQUEST_PAYLOAD_SIZE];
+    bool encoded = cluster_protocol::encode_lstm_state_forward_request_payload(
+        request, request_payload, sizeof(request_payload));
+    cluster_send_packet(cluster_worker_ips[1], CLUSTER_WIFI_UDP_PORT,
+                        cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_REQUEST,
+                        1, cluster_layer_shard_gen_seq_b1,
+                        request_payload, sizeof(request_payload));
+  }
+
+  // Retry logic for board 2
+  if (cluster_layer_shard_gen_active && cluster_layer_shard_gen_waiting_b2 &&
+      now - cluster_layer_shard_gen_last_send_b2_ms > 3000) {
+    Serial.printf("CLUSTER_LAYER_SHARD_RETRY_B2 seq=%lu\n", (unsigned long)cluster_layer_shard_gen_seq_b2);
+    cluster_layer_shard_gen_last_send_b2_ms = now;
+    cluster_protocol::ClusterLstmStateForwardRequest request;
+    request.token_id = 0;
+    request.layer_start = 2;
+    request.layer_count = 1;
+    request.hidden_scale = cluster_layer_shard_h_scale;
+    request.cell_scale = cluster_layer_shard_c_scale;
+    request.qx = cluster_layer_shard_qx;
+    request.qc = cluster_layer_shard_qc;
+    uint8_t request_payload[cluster_protocol::CLUSTER_LSTM_STATE_FORWARD_REQUEST_PAYLOAD_SIZE];
+    bool encoded = cluster_protocol::encode_lstm_state_forward_request_payload(
+        request, request_payload, sizeof(request_payload));
+    cluster_send_packet(cluster_worker_ips[2], CLUSTER_WIFI_UDP_PORT,
+                        cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_REQUEST,
+                        2, cluster_layer_shard_gen_seq_b2,
+                        request_payload, sizeof(request_payload));
+  }
+}
+#endif
+
+#if CLUSTER_ROLE_COORD && CLUSTER_WIFI_LAYER_SHARD
+static void cluster_handle_layer_shard_state_result(const cluster_protocol::ClusterPacketHeader &header,
+                                                     const uint8_t *payload, size_t payload_len) {
+  cluster_protocol::ClusterLstmStateForwardResult result;
+  if (!cluster_protocol::decode_lstm_state_forward_result_payload(payload, payload_len, &result)) {
+    Serial.printf("CLUSTER_LAYER_SHARD_DROP reason=bad_state_result_payload src_board=%u seq=%lu\n",
+                  (unsigned)header.src_board, (unsigned long)header.seq);
+    return;
+  }
+
+  uint8_t src = header.src_board;
+  Serial.printf("CLUSTER_LAYER_SHARD_STATE_RESULT src_board=%u seq=%lu layer_end=%u decoded=true\n",
+                (unsigned)src, (unsigned long)header.seq, (unsigned)result.layer_end);
+
+  if (src == 1 && cluster_layer_shard_gen_waiting_b1) {
+    // Board 1 result: store and forward to board 2
+    cluster_layer_shard_result_h_scale = result.hidden_scale;
+    cluster_layer_shard_result_c_scale = result.cell_scale;
+    memcpy(cluster_layer_shard_result_qx, result.qx, cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN);
+    memcpy(cluster_layer_shard_result_qc, result.qc, cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN);
+    cluster_layer_shard_b1_result_ready = true;
+    cluster_layer_shard_gen_waiting_b1 = false;
+
+    // Send to board 2
+    cluster_layer_shard_gen_seq_b2 = cluster_layer_shard_seq++;
+    cluster_layer_shard_gen_waiting_b2 = true;
+    cluster_layer_shard_b2_result_ready = false;
+    cluster_layer_shard_gen_last_send_b2_ms = millis();
+
+    cluster_protocol::ClusterLstmStateForwardRequest req2;
+    req2.token_id = 0;
+    req2.layer_start = 2;
+    req2.layer_count = 1;
+    req2.hidden_scale = cluster_layer_shard_result_h_scale;
+    req2.cell_scale = cluster_layer_shard_result_c_scale;
+    req2.qx = cluster_layer_shard_result_qx;
+    req2.qc = cluster_layer_shard_result_qc;
+
+    uint8_t req_payload[cluster_protocol::CLUSTER_LSTM_STATE_FORWARD_REQUEST_PAYLOAD_SIZE];
+    bool encoded = cluster_protocol::encode_lstm_state_forward_request_payload(
+        req2, req_payload, sizeof(req_payload));
+    IPAddress target2 = cluster_worker_ips[2];
+    bool sent = encoded && cluster_send_packet(target2, CLUSTER_WIFI_UDP_PORT,
+                                                cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_REQUEST,
+                                                2, cluster_layer_shard_gen_seq_b2,
+                                                req_payload, sizeof(req_payload));
+    Serial.printf("CLUSTER_LAYER_SHARD_FORWARD_TO_B2 seq=%lu target=%s sent=%s\n",
+                  (unsigned long)cluster_layer_shard_gen_seq_b2,
+                  target2.toString().c_str(), sent ? "true" : "false");
+  } else if (src == 2 && cluster_layer_shard_gen_waiting_b2) {
+    // Board 2 result: dequantize and run FC
+    cluster_layer_shard_result_h_scale = result.hidden_scale;
+    cluster_layer_shard_result_c_scale = result.cell_scale;
+    memcpy(cluster_layer_shard_result_qx, result.qx, cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN);
+    memcpy(cluster_layer_shard_result_qc, result.qc, cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN);
+    cluster_layer_shard_b2_result_ready = true;
+    cluster_layer_shard_gen_waiting_b2 = false;
+
+    // Dequantize final hidden state
+    for (int i = 0; i < HIDDEN; i++) {
+      st.h[2][i] = (float)((int8_t)cluster_layer_shard_result_qx[i]) * cluster_layer_shard_result_h_scale;
+      st.c[2][i] = (float)((int8_t)cluster_layer_shard_result_qc[i]) * cluster_layer_shard_result_c_scale;
+    }
+    memcpy(st.x, st.h[2], sizeof(float) * HIDDEN);
+
+    // Run FC head
+    cluster_layer_shard_output_token = model_finish_fc(false, &cluster_layer_shard_output_logit);
+    uint32_t elapsed = millis() - cluster_layer_shard_gen_started_ms;
+    Serial.printf("CLUSTER_LAYER_SHARD_TOKEN token=%u char=%c logit=%.6f elapsed_ms=%lu\n",
+                  (unsigned)cluster_layer_shard_output_token,
+                  idx_vocab(cluster_layer_shard_output_token),
+                  (double)cluster_layer_shard_output_logit,
+                  (unsigned long)elapsed);
+    cluster_layer_shard_gen_active = false;
+  }
+}
+#endif
+
+#if CLUSTER_WIFI_LAYER_SHARD
+static void cluster_handle_layer_shard_state_request(const cluster_protocol::ClusterPacketHeader &header,
+                                                       const uint8_t *payload, size_t payload_len) {
+#if CLUSTER_ROLE_WORKER
+  if (header.dst_board != CLUSTER_BROADCAST_BOARD && header.dst_board != (uint8_t)CLUSTER_BOARD_ID) return;
+
+  cluster_protocol::ClusterLstmStateForwardRequest request;
+  if (!cluster_protocol::decode_lstm_state_forward_request_payload(payload, payload_len, &request)) {
+    Serial.printf("CLUSTER_LAYER_SHARD_DROP reason=bad_state_request_payload src_board=%u seq=%lu\n",
+                  (unsigned)header.src_board, (unsigned long)header.seq);
+    return;
+  }
+  Serial.printf("CLUSTER_LAYER_SHARD_STATE_REQUEST board_id=%u seq=%lu token=%u layer_start=%u layer_count=%u decoded=true\n",
+                (unsigned)CLUSTER_BOARD_ID, (unsigned long)header.seq, (unsigned)request.token_id,
+                (unsigned)request.layer_start, (unsigned)request.layer_count);
+
+  const int board_layer = (int)CLUSTER_BOARD_ID;
+  float h_scale = request.hidden_scale;
+  float c_scale = request.cell_scale;
+  const int8_t *rqx = (const int8_t *)request.qx;
+  const int8_t *rqc = (const int8_t *)request.qc;
+
+  for (int i = 0; i < HIDDEN; i++) {
+    st.h[board_layer][i] = (float)rqx[i] * h_scale;
+    st.c[board_layer][i] = (float)rqc[i] * c_scale;
+  }
+  memcpy(st.x, st.h[board_layer], sizeof(float) * HIDDEN);
+
+  lstm_layer(board_layer, st.x, HIDDEN, false);
+
+  static int8_t out_qx[cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN] __attribute__((aligned(16)));
+  static int8_t out_qc[cluster_protocol::CLUSTER_LSTM_STATE_HIDDEN] __attribute__((aligned(16)));
+  float out_h_scale = quantize_q8(st.h[board_layer], out_qx, HIDDEN);
+  float out_c_scale = quantize_q8(st.c[board_layer], out_qc, HIDDEN);
+
+  Serial.printf("CLUSTER_LAYER_SHARD_LAYER_DONE board_id=%u layer=%d out_h_scale=%.9f out_c_scale=%.9f\n",
+                (unsigned)CLUSTER_BOARD_ID, board_layer,
+                (double)out_h_scale, (double)out_c_scale);
+
+  cluster_protocol::ClusterLstmStateForwardResult result;
+  result.layer_end = (uint8_t)(board_layer + 1);
+  result.hidden_scale = out_h_scale;
+  result.cell_scale = out_c_scale;
+  result.qx = (const uint8_t *)out_qx;
+  result.qc = (const uint8_t *)out_qc;
+
+  static uint8_t result_payload[cluster_protocol::CLUSTER_LSTM_STATE_FORWARD_RESULT_PAYLOAD_SIZE];
+  bool encoded = cluster_protocol::encode_lstm_state_forward_result_payload(
+      result, result_payload, sizeof(result_payload));
+  bool ok = encoded && cluster_send_packet(cluster_udp.remoteIP(), cluster_udp.remotePort(),
+                                           cluster_protocol::CLUSTER_MSG_LSTM_STATE_FORWARD_RESULT,
+                                           header.src_board, header.seq, result_payload,
+                                           sizeof(result_payload));
+  if (!ok) {
+    Serial.printf("CLUSTER_LAYER_SHARD_DROP reason=state_result_send_failed board_id=%u seq=%lu encoded=%s\n",
+                  (unsigned)CLUSTER_BOARD_ID, (unsigned long)header.seq,
+                  encoded ? "true" : "false");
+  }
+#else
+  (void)header;
+  (void)payload;
+  (void)payload_len;
+#endif
+}
+#endif
 
 static bool cluster_compute_fc_shard(uint8_t worker_board, const int8_t *hidden_q8, float hidden_scale,
                                      uint8_t *best_token_out, float *best_logit_out,

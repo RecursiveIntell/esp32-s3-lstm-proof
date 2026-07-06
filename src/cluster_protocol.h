@@ -38,7 +38,10 @@ enum ClusterMsgType : uint8_t {
 };
 
 static constexpr size_t CLUSTER_BENCH_RESULT_PAYLOAD_SIZE = 16;
-static constexpr size_t CLUSTER_LSTM_STATE_HIDDEN = 512;
+#ifndef RI_HIDDEN
+#define RI_HIDDEN 512
+#endif
+static constexpr size_t CLUSTER_LSTM_STATE_HIDDEN = RI_HIDDEN;
 static constexpr size_t CLUSTER_LSTM_STATE_FORWARD_REQUEST_PAYLOAD_SIZE =
     1 + 1 + 1 + 4 + 4 + CLUSTER_LSTM_STATE_HIDDEN + CLUSTER_LSTM_STATE_HIDDEN;
 static constexpr size_t CLUSTER_LSTM_STATE_FORWARD_RESULT_PAYLOAD_SIZE =
