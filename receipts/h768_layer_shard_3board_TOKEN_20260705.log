@@ -1,0 +1,474 @@
+c
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (174) esp_core_dump_flash: No core dump partition nt lstm.weight_ih_l0 old=2359296 new=1179648 scale=1.48954
+int4 recurrent lstm.weight_hh_l0 old=2359296 new=1179648 scale=3.48932
+int4 recurrent converted=2 saved=2359296 free_psram=1216659
+LAYER_SHARD_RESOLVED board_id=0 layer=0 embed=yes fcw=yes fcb=yes wih=yes whh=yes bih=yes bhh=yes
+CLUSTER_MODEL_LAYER_SHARD_READY board_id=0 layer=0 profile=tinystories_h768_all_int4 hidden=768 layers=3
+CLUSTER_MODEL_READY board_id=0 ok=1 role=coord mode=layer_shard
+CLUSTER_WIFI_PING_BROADCAST seq=1 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=2 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=3 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=4 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=5 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=6 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=7 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=8 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=8 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=9 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=9 from=192.168.4.3:42100 rssi=0 model_ready=1
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x40377ab5
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100
+CLUSTER_WIFI_UDP_READY board_id=0 port=42100
+CLUSTER_OTA_READY board_id=0 hostname=ri-esp-cluster-coord ip=192.168.4.1 port=3232
+CLUSTER_HTTP_UPDATE_READY board_id=0 ip=192.168.4.1 port=8080 endpoint=/update data_endpoint=/update_weights
+weights partition addr=0x210000 size=5242880
+RILM version=1 tensors=7
+RILM_TENSOR index=0 name=embed.weight dtype=1 ndim=2 dim0=34 dim1=768 scale=0.597644 payload_len=26112 payload_offset=44 next_offset=26156 model_len=5242880
+RILM_TENSOR index=1 name=lstm.weight_ih_l0 dtype=1 ndim=2 dim0=3072 dim1=768 scale=0.0821006 payload_len=2359296 payload_offset=26193 next_offset=2385489 model_len=5242880
+RILM_TENSOR index=2 name=lstm.weight_hh_l0 dtype=1 ndim=2 dim0=3072 dim1=768 scale=0.192325 payload_len=2359296 payload_offset=2385526 next_offset=4744822 model_len=5242880
+RILM_TENSOR index=3 name=lstm.bias_ih_l0 dtype=0 ndim=1 dim0=3072 dim1=0 scale=1 payload_len=12288 payload_offset=4744853 next_offset=4757141 model_len=5242880
+RILM_TENSOR index=4 name=lstm.bias_hh_l0 dtype=0 ndim=1 dim0=3072 dim1=0 scale=1 payload_len=12288 payload_offset=4757172 next_offset=4769460 model_len=5242880
+RILM_TENSOR index=5 name=fc.weight dtype=1 ndim=2 dim0=34 dim1=768 scale=0.222783 payload_len=26112 payload_offset=4769489 next_offset=4795601 model_len=5242880
+RILM_TENSOR index=6 name=fc.bias dtype=0 ndim=1 dim0=34 dim1=0 scale=1 payload_len=136 payload_offset=4795624 next_offset=4795760 model_len=5242880
+payloads cloned bytes=4795528 free_heap=244496 free_psram=3575987
+int4 recurrent lstm.weight_ih_l0 old=2359296 new=1179648 scale=1.48954
+int4 recurrent lstm.weight_hh_l0 old=2359296 new=1179648 scale=3.48932
+int4 recurrent converted=2 saved=2359296 free_psram=1216659
+LAYER_SHARD_RESOLVED board_id=0 layer=0 embed=yes fcw=yes fcb=yes wih=yes whh=yes bih=yes bhh=yes
+CLUSTER_MODEL_LAYER_SHARD_READY board_id=0 layer=0 profile=tinystories_h768_all_int4 hidden=768 layers=3
+CLUSTER_MODEL_READY board_id=0 ok=1 role=coord mode=layer_shard
+CLUSTER_WIFI_PING_BROADCAST seq=1 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=2 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=3 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=4 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=5 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=6 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=7 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=8 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=9 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=10 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=10 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=11 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=11 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=12 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=12 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=13 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=13 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=14 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=14 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=15 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=15 from=192.168.4.3:42100 rssi=0 model_ready=1
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x40377ab5
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100
+CLUSTER_WIFI_UDP_READY board_id=0 port=42100
+CLUSTER_OTA_READY board_id=0 hostname=ri-esp-cluster-coord ip=192.168.4.1 port=3232
+CLUSTER_HTTP_UPDATE_READY board_id=0 ip=192.168.4.1 port=8080 endpoint=/update data_endpoint=/update_weights
+weights partition addr=0x210000 size=5242880
+RILM version=1 tensors=7
+RILM_TENSOR index=0 name=embed.weight dtype=1 ndim=2 dim0=34 dim1=768 scale=0.597644 payload_len=26112 payload_offset=44 next_offset=26156 model_len=5242880
+RILM_TENSOR index=1 name=lstm.weight_ih_l0 dtype=1 ndim=2 dim0=3072 dim1=768 scale=0.0821006 payload_len=2359296 payload_offset=26193 next_offset=2385489 model_len=5242880
+RILM_TENSOR index=2 name=lstm.weight_hh_l0 dtype=1 ndim=2 dim0=3072 dim1=768 scale=0.192325 payload_len=2359296 payload_offset=2385526 next_offset=4744822 model_len=5242880
+RILM_TENSOR index=3 name=lstm.bias_ih_l0 dtype=0 ndim=1 dim0=3072 dim1=0 scale=1 payload_len=12288 payload_offset=4744853 next_offset=4757141 model_len=5242880
+RILM_TENSOR index=4 name=lstm.bias_hh_l0 dtype=0 ndim=1 dim0=3072 dim1=0 scale=1 payload_len=12288 payload_offset=4757172 next_offset=4769460 model_len=5242880
+RILM_TENSOR index=5 name=fc.weight dtype=1 ndim=2 dim0=34 dim1=768 scale=0.222783 payload_len=26112 payload_offset=4769489 next_offset=4795601 model_len=5242880
+RILM_TENSOR index=6 name=fc.bias dtype=0 ndim=1 dim0=34 dim1=0 scale=1 payload_len=136 payload_offset=4795624 next_offset=4795760 model_len=5242880
+payloads cloned bytes=4795528 free_heap=244496 free_psram=3575987
+int4 recurrent lstm.weight_ih_l0 old=2359296 new=1179648 scale=1.48954
+int4 recurrent lstm.weight_hh_l0 old=2359296 new=1179648 scale=3.48932
+int4 recurrent converted=2 saved=2359296 free_psram=1216659
+LAYER_SHARD_RESOLVED board_id=0 layer=0 embed=yes fcw=yes fcb=yes wih=yes whh=yes bih=yes bhh=yes
+CLUSTER_MODEL_LAYER_SHARD_READY board_id=0 layer=0 profile=tinystories_h768_all_int4 hidden=768 layers=3
+CLUSTER_MODEL_READY board_id=0 ok=1 role=coord mode=layer_shard
+CLUSTER_WIFI_PING_BROADCAST seq=1 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=2 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=3 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=4 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=5 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=6 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=7 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=8 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=9 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=10 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=10 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=1 seq=10 from=192.168.4.3:42100 rssi=0 model_ready=1
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x40377ab5
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100
+CLUSTER_WIFI_UDP_READY board_id=0 port=42100
+CLUSTER_OTA_READY board_id=0 hostname=ri-esp-cluster-coord ip=192.168.4.1 port=3232
+CLUSTER_HTTP_UPDATE_READY board_id=0 ip=192.168.4.1 port=8080 endpoint=/update data_endpoint=/update_weights
+weights partition addr=0x210000 size=5242880
+RILM version=1 tensors=7
+RILM_TENSOR index=0 name=embed.weight dtype=1 ndim=2 dim0=34 dim1=768 scale=0.597644 payload_len=26112 payload_offset=44 next_offset=26156 model_len=5242880
+RILM_TENSOR index=1 name=lstm.weight_ih_l0 dtype=1 ndim=2 dim0=3072 dim1=768 scale=0.0821006 payload_len=2359296 payload_offset=26193 next_offset=2385489 model_len=5242880
+RILM_TENSOR index=2 name=lstm.weight_hh_l0 dtype=1 ndim=2 dim0=3072 dim1=768 scale=0.192325 payload_len=2359296 payload_offset=2385526 next_offset=4744822 model_len=5242880
+RILM_TENSOR index=3 name=lstm.bias_ih_l0 dtype=0 ndim=1 dim0=3072 dim1=0 scale=1 payload_len=12288 payload_offset=4744853 next_offset=4757141 model_len=5242880
+RILM_TENSOR index=4 name=lstm.bias_hh_l0 dtype=0 ndim=1 dim0=3072 dim1=0 scale=1 payload_len=12288 payload_offset=4757172 next_offset=4769460 model_len=5242880
+RILM_TENSOR index=5 name=fc.weight dtype=1 ndim=2 dim0=34 dim1=768 scale=0.222783 payload_len=26112 payload_offset=4769489 next_offset=4795601 model_len=5242880
+RILM_TENSOR index=6 name=fc.bias dtype=0 ndim=1 dim0=34 dim1=0 scale=1 payload_len=136 payload_offset=4795624 next_offset=4795760 model_len=5242880
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x40377ab5
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100
+CLUSTER_WIFI_UDP_READY board_id=0 port=42100
+CLUSTER_OTA_READY board_id=0 hostname=ri-esp-cluster-coord ip=192.168.4.1 port=3232
+CLUSTER_HTTP_UPDATE_READY board_id=0 ip=192.168.4.1 port=8080 endpoint=/update data_endpoint=/update_weights
+weights partition addr=0x210000 size=5242880
+RILM version=1 tensors=7
+RILM_TENSOR index=0 name=embed.weight dtype=1 ndim=2 dim0=34 dim1=768 scale=0.597644 payload_len=26112 payload_offset=44 next_offset=26156 model_len=5242880
+RILM_TENSOR index=1 name=lstm.weight_ih_l0 dtype=1 ndim=2 dim0=3072 dim1=768 scale=0.0821006 payload_len=2359296 payload_offset=26193 next_offset=2385489 model_len=5242880
+RILM_TENSOR index=2 name=lstm.weight_hh_l0 dtype=1 ndim=2 dim0=3072 dim1=768 scale=0.192325 payload_len=2359296 payload_offset=2385526 next_offset=4744822 model_len=5242880
+RILM_TENSOR index=3 name=lstm.bias_ih_l0 dtype=0 ndim=1 dim0=3072 dim1=0 scale=1 payload_len=12288 payload_offset=4744853 next_offset=4757141 model_len=5242880
+RILM_TENSOR index=4 name=lstm.bias_hh_l0 dtype=0 ndim=1 dim0=3072 dim1=0 scale=1 payload_len=12288 payload_offset=4757172 next_offset=4769460 model_len=5242880
+RILM_TENSOR index=5 name=fc.weight dtype=1 ndim=2 dim0=34 dim1=768 scale=0.222783 payload_len=26112 payload_offset=4769489 next_offset=4795601 model_len=5242880
+RILM_TENSOR index=6 name=fc.bias dtype=0 ndim=1 dim0=34 dim1=0 scale=1 payload_len=136 payload_offset=4795624 next_offset=4795760 model_len=5242880
+payloads cloned bytes=4795528 free_heap=244492 free_psram=3575987
+int4 recurrent lstm.weight_ih_l0 old=2359296 new=1179648 scale=1.48954
+int4 recurrent lstm.weight_hh_l0 old=2359296 new=1179648 scale=3.48932
+int4 recurrent converted=2 saved=2359296 free_psram=1216659
+LAYER_SHARD_RESOLVED board_id=0 layer=0 embed=yes fcw=yes fcb=yes wih=yes whh=yes bih=yes bhh=yes
+CLUSTER_MODEL_LAYER_SHARD_READY board_id=0 layer=0 profile=tinystories_h768_all_int4 hidden=768 layers=3
+CLUSTER_MODEL_READY board_id=0 ok=1 role=coord mode=layer_shard
+CLUSTER_WIFI_PING_BROADCAST seq=1 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=2 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=3 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=4 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=5 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=6 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=6 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=7 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=8 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=9 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=9 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=10 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=11 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=12 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=13 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=13 from=192.168.4.3:42100 rssi=0 model_ready=1
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x40377ab5
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100
+CLUSTER_WIFI_UDP_READY board_id=0 port=42100
+CLUSTER_OTA_READY board_id=0 hostname=ri-esp-cluster-coord ip=192.168.4.1 port=3232
+CLUSTER_HTTP_UPDATE_READY board_id=0 ip=192.168.4.1 port=8080 endpoint=/update data_endpoint=/update_weights
+weights partition addr=0x210000 size=5242880
+RILM version=1 tensors=7
+RILM_TENSOR index=0 name=embed.weight dtype=1 ndim=2 dim0=34 dim1=768 scale=0.597644 payload_len=26112 payload_offset=44 next_offset=26156 model_len=5242880
+RILM_TENSOR index=1 name=lstm.weight_ih_l0 dtype=1 ndim=2 dim0=3072 dim1=768 scale=0.0821006 payload_len=2359296 payload_offset=26193 next_offset=2385489 model_len=5242880
+RILM_TENSOR index=2 name=lstm.weight_hh_l0 dtype=1 ndim=2 dim0=3072 dim1=768 scale=0.192325 payload_len=2359296 payload_offset=2385526 next_offset=4744822 model_len=5242880
+RILM_TENSOR index=3 name=lstm.bias_ih_l0 dtype=0 ndim=1 dim0=3072 dim1=0 scale=1 payload_len=12288 payload_offset=4744853 next_offset=4757141 model_len=5242880
+RILM_TENSOR index=4 name=lstm.bias_hh_l0 dtype=0 ndim=1 dim0=3072 dim1=0 scale=1 payload_len=12288 payload_offset=4757172 next_offset=4769460 model_len=5242880
+RILM_TENSOR index=5 name=fc.weight dtype=1 ndim=2 dim0=34 dim1=768 scale=0.222783 payload_len=26112 payload_offset=4769489 next_offset=4795601 model_len=5242880
+RILM_TENSOR index=6 name=fc.bias dtype=0 ndim=1 dim0=34 dim1=0 scale=1 payload_len=136 payload_offset=4795624 next_offset=4795760 model_len=5242880
+payloads cloned bytes=4795528 free_heap=244492 free_psram=3575987
+int4 recurrent lstm.weight_ih_l0 old=2359296 new=1179648 scale=1.48954
+int4 recurrent lstm.weight_hh_l0 old=2359296 new=1179648 scale=3.48932
+int4 recurrent converted=2 saved=2359296 free_psram=1216659
+LAYER_SHARD_RESOLVED board_id=0 layer=0 embed=yes fcw=yes fcb=yes wih=yes whh=yes bih=yes bhh=yes
+CLUSTER_MODEL_LAYER_SHARD_READY board_id=0 layer=0 profile=tinystories_h768_all_int4 hidden=768 layers=3
+CLUSTER_MODEL_READY board_id=0 ok=1 role=coord mode=layer_shard
+CLUSTER_WIFI_PING_BROADCAST seq=1 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=2 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=3 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=4 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=5 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=6 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=7 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=8 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=9 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=10 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=10 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=11 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=11 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=12 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=12 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=13 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=13 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=14 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=14 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=15 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=15 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=16 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=16 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=17 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=17 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=18 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=18 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=19 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=19 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=20 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=20 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=21 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=21 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=22 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=22 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=23 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=23 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=24 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=24 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=25 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=25 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=26 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=26 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=27 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=27 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=28 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=28 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=29 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=29 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=30 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=30 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=31 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=31 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=32 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=32 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=33 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=33 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=34 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=34 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=35 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=35 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=36 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=36 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=37 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=37 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=38 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=38 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=39 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=39 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=40 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=40 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=41 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=41 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=42 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=42 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=43 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=43 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=44 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=44 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=45 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=45 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=46 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=46 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=47 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=47 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=48 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=48 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=49 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=49 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=50 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=50 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=51 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=51 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=52 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=52 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=53 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=53 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=54 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=54 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=55 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=55 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=56 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=56 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=57 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=57 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=58 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=58 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=59 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=59 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=60 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=60 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=61 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=61 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=62 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=62 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=63 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=63 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=64 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=64 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=65 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=65 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=66 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=66 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=67 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=67 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=68 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=68 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=69 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=69 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=70 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=70 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=71 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=71 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=72 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=72 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=73 dst=192.168.4.255 port=42100 sent=true reason=layer_shard_discovery
+CLUSTER_WIFI_PONG src_board=2 seq=73 from=192.168.4.2:42100 rssi=0 model_ready=1
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x40378ef5
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037cec4
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+CLUSTER_WIFI_AP_READY ok=1 ssid=RI-ESP-CLUSTER ip=192.168.4.1 port=42100
+CLUSTER_WIFI_UDP_READY board_id=0 port=42100
+CLUSTER_OTA_READY board_id=0 hostname=ri-esp-cluster-coord ip=192.168.4.1 port=3232
+CLUSTER_HTTP_UPDATE_READY board_id=0 ip=192.168.4.1 port=8080 endpoint=/update data_endpoint=/update_weights
+weights partition addr=0x210000 size=5242880
+RILM version=1 tensors=7
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x403743c8
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037cf5e
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037cf25
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037cec4
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037cec6
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1

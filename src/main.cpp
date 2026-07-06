@@ -1344,9 +1344,6 @@ static void cluster_setup_wifi_demo() {
 #if CLUSTER_ENABLE_HTTP_UPDATE
   cluster_setup_http_update();
 #endif
-  // Feed RTC WDT before model init starts; the HTTP update server setup
-  // can take long enough to trigger TG1WDT.
-  model_init_pump_watchdog();
 #if CLUSTER_WIFI_LOCAL_GENERATOR
   cluster_model_ready = cluster_model_init_full_local();
   Serial.printf("CLUSTER_MODEL_READY board_id=%u ok=%u role=%s mode=local_generator\n", (unsigned)CLUSTER_BOARD_ID,
@@ -1838,10 +1835,10 @@ static void model_init_suspend_watchdogs() {
 }
 
 static void model_init_resume_watchdogs() {
-  // Do NOT re-enable any WDTs for local generator mode. Both coordinator
-  // and workers run heavy 64-char generation (~5.5s per run) that starves
-  // both the Task WDT and RTC WDT.
-#if !CLUSTER_WIFI_LOCAL_GENERATOR
+  // Do NOT re-enable any WDTs for local generator or layer-shard mode.
+  // Both run heavy generation operations that need more than any WDT
+  // timeout allows.
+#if !CLUSTER_WIFI_LOCAL_GENERATOR && !CLUSTER_WIFI_LAYER_SHARD
   enableLoopWDT();
   enableCore0WDT();
 #ifndef CONFIG_FREERTOS_UNICORE
@@ -2165,6 +2162,10 @@ static void core0_worker(void *arg) {
       acc += dot_tensor_q8(p->wih, (uint32_t)g * p->input_dim, p->qx, p->input_scale, p->input_dim);
       acc += dot_tensor_q8(p->whh, (uint32_t)g * HIDDEN, p->qh, p->h_scale, HIDDEN);
       p->gates_out[g] = acc;
+      if ((g & 63) == 0) {
+        yield();
+        model_init_pump_watchdog();
+      }
     }
 
     xSemaphoreGive(core1_done_sem);
@@ -2209,7 +2210,10 @@ void lstm_layer(int layer, const float *input, int input_dim, bool measure) {
     acc += dot_tensor_q8(whh, (uint32_t)g * HIDDEN, st.qh[layer], h_scale, HIDDEN);
     if (measure) ops.lstm_whh_us += (uint32_t)(micros() - t0);
     st.gates[g] = acc;
-    if ((g & 255) == 0) yield();
+    if ((g & 63) == 0) {
+      yield();
+      model_init_pump_watchdog();
+    }
   }
 
   xSemaphoreTake(core1_done_sem, portMAX_DELAY);

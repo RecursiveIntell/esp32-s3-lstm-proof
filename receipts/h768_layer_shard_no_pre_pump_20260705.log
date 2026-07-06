@@ -1,0 +1,15 @@
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x8 (TG1WDT_SYS_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x403743c5
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce3808,len:0x4bc
+load:0x403c9700,len:0xbd8
+load:0x403cc700,len:0x2a0c
+entry 0x403c98d0
+E (179) esp_core_dump_flash: No core dump partition found!
+E (179) esp_core_dump_flash: No core dump partition found!
+ESP32-S3 cluster WiFi demo boot board_id=0 role=coord mode=layer_shard
+CLUSTER_WIFI_CONFIG ssid=RI-ESP-CLUSTER port=42100 ap_mode=1
+Guru Meditation Error: Core  1 panic'ed (IllegalInstruction). Exception was unhandled.
