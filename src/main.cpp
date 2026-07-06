@@ -135,6 +135,9 @@ static constexpr int LAYERS = RI_LAYERS;
 static constexpr int SEED_COUNT = 3;
 static constexpr int TOKENS_PER_SEED = 16;
 static constexpr int MAX_TOKENS = SEED_COUNT * TOKENS_PER_SEED;
+#ifndef CLUSTER_LOCAL_GEN_CHARS
+#define CLUSTER_LOCAL_GEN_CHARS 64
+#endif
 static constexpr const char *BENCH_SCHEMA = "ri-esp32s3-lstm-bench-v1";
 static constexpr const char *FIRMWARE_VARIANT = RI_FIRMWARE_VARIANT;
 static constexpr const char *WEIGHTS_SHA256 = RI_WEIGHTS_SHA256;
@@ -1866,31 +1869,32 @@ static void model_init_copy_payload(uint8_t *dst, const uint8_t *src, uint32_t l
 }
 
 static void model_init_suspend_watchdogs() {
-  // TG1WDT is the hardware timer watchdog, separate from the Task WDT.
-  // It fires during long PSRAM clone/convert operations. Disable it
-  // along with the Arduino task WDT during model init.
+  // Disable Task WDTs.
   disableLoopWDT();
   disableCore0WDT();
 #ifndef CONFIG_FREERTOS_UNICORE
   disableCore1WDT();
 #endif
-  // Hardware TG1 watchdog: feed RTC WDT to prevent reset during init.
-  // We write the protect key, reset the WDT counter, then lock.
+  // Also disable RTC hardware WDT (TG1WDT) to prevent reset during
+  // heavy PSRAM clone/convert and post-init local gen operations.
   WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0x50D83AA1);
-  WRITE_PERI_REG(RTC_CNTL_WDTCONFIG0_REG, 0x32 << 2 | RTC_CNTL_WDT_EN);
+  CLEAR_PERI_REG_MASK(RTC_CNTL_WDTCONFIG0_REG, RTC_CNTL_WDT_EN);
   WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0);
 }
 
 static void model_init_resume_watchdogs() {
+  // Do NOT re-enable any WDTs for the coordinator. The coordinator runs
+  // heavy operations (dist gen, local gen, model init) that need more
+  // than any WDT timeout allows. Workers don't call this path.
+  // Task WDTs (Loop/Core0/Core1) are re-enabled for non-coordinator roles
+  // via the worker-only init path.
+#if !CLUSTER_ROLE_COORD
   enableLoopWDT();
   enableCore0WDT();
 #ifndef CONFIG_FREERTOS_UNICORE
   enableCore1WDT();
 #endif
-  // Feed RTC hardware WDT.
-  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0x50D83AA1);
-  WRITE_PERI_REG(RTC_CNTL_WDTCONFIG0_REG, 0x32 << 2 | RTC_CNTL_WDT_EN);
-  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0);
+#endif
 }
 
 bool load_model_partition() {
@@ -3093,7 +3097,8 @@ static void cluster_local_generator_tick(uint32_t now) {
 
   const uint8_t prompt_id = (uint8_t)(CLUSTER_BOARD_ID % SEED_COUNT);
   const char *seed = BENCH_SEEDS[prompt_id];
-  char output[TOKENS_PER_SEED + 1];
+  const int gen_chars = CLUSTER_LOCAL_GEN_CHARS;
+  char output[CLUSTER_LOCAL_GEN_CHARS + 1];
   uint32_t checksum = 2166136261u;
 
   reset_state();
@@ -3102,7 +3107,7 @@ static void cluster_local_generator_tick(uint32_t now) {
 
   uint32_t start_ms = millis();
   memset(&ops, 0, sizeof(ops));
-  for (int i = 0; i < TOKENS_PER_SEED; i++) {
+  for (int i = 0; i < gen_chars; i++) {
     char ch = idx_vocab(token);
     output[i] = ch;
     checksum ^= (uint8_t)ch;
@@ -3110,14 +3115,14 @@ static void cluster_local_generator_tick(uint32_t now) {
     token = model_step(token, true);
     yield();
   }
-  output[TOKENS_PER_SEED] = 0;
+  output[gen_chars] = 0;
   uint32_t elapsed_ms = millis() - start_ms;
-  float chars_per_sec = elapsed_ms ? (1000.0f * (float)TOKENS_PER_SEED / (float)elapsed_ms) : 0.0f;
+  float chars_per_sec = elapsed_ms ? (1000.0f * (float)gen_chars / (float)elapsed_ms) : 0.0f;
 
   cluster_protocol::ClusterBenchResult result;
   result.prompt_id = prompt_id;
   result.model_profile_id = 1;
-  result.generated_chars = TOKENS_PER_SEED;
+  result.generated_chars = gen_chars;
   result.elapsed_ms = elapsed_ms;
   result.checksum = checksum;
   result.chars_per_sec = chars_per_sec;

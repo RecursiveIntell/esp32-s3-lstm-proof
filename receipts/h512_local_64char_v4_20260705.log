@@ -1,0 +1,1 @@
+CLUSTER_BENCH_RESULT board=0 prompt_id=0 profile=tinystories_h512_mixed_lstm_safe generated_chars=64 elapsed_ms=5514 chars_per_sec=11.6068 checksum=0x2e89b309 output="time there was a tiny model that lived on a sensor board. the ms"
