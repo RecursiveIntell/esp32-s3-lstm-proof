@@ -1,0 +1,135 @@
+en=5242880
+RILM_TENSOR index=2 name=lstm.weight_hh_l0 dtype=1 ndim=2 dim0=2048 dim1=512 scale=0.00608837 payload_len=1048576 payload_offset=532854 next_offset=1581430 model_len=5242880
+RILM_TENSOR index=3 name=lstm.bias_ih_l0 dtype=0 ndim=1 dim0=2048 dim1=0 scale=1 payload_len=8192 payload_offset=1581461 next_offset=1589653 model_len=5242880
+RILM_TENSOR index=4 name=lstm.bias_hh_l0 dtype=0 ndim=1 dim0=2048 dim1=0 scale=1 payload_len=8192 payload_offset=1589684 next_offset=1597876 model_len=5242880
+RILM_TENSOR index=5 name=lstm.weight_ih_l1 dtype=2 ndim=2 dim0=2048 dim1=512 scale=0.100492 payload_len=524288 payload_offset=1597913 next_offset=2122201 model_len=5242880
+RILM_TENSOR index=6 name=lstm.weight_hh_l1 dtype=1 ndim=2 dim0=2048 dim1=512 scale=0.00777948 payload_len=1048576 payload_offset=2122238 next_offset=3170814 model_len=5242880
+RILM_TENSOR index=7 name=lstm.bias_ih_l1 dtype=0 ndim=1 dim0=2048 dim1=0 scale=1 payload_len=8192 payload_offset=3170845 next_offset=3179037 model_len=5242880
+RILM_TENSOR index=8 name=lstm.bias_hh_l1 dtype=0 ndim=1 dim0=2048 dim1=0 scale=1 payload_len=8192 payload_offset=3179068 next_offset=3187260 model_len=5242880
+RILM_TENSOR index=9 name=lstm.weight_ih_l2 dtype=2 ndim=2 dim0=2048 dim1=512 scale=0.127918 payload_len=524288 payload_offset=3187297 next_offset=3711585 model_len=5242880
+RILM_TENSOR index=10 name=lstm.weight_hh_l2 dtype=1 ndim=2 dim0=2048 dim1=512 scale=0.00700986 payload_len=1048576 payload_offset=3711622 next_offset=4760198 model_len=5242880
+RILM_TENSOR index=11 name=lstm.bias_ih_l2 dtype=0 ndim=1 dim0=2048 dim1=0 scale=1 payload_len=8192 payload_offset=4760229 next_offset=4768421 model_len=5242880
+RILM_TENSOR index=12 name=lstm.bias_hh_l2 dtype=0 ndim=1 dim0=2048 dim1=0 scale=1 payload_len=8192 payload_offset=4768452 next_offset=4776644 model_len=5242880
+RILM_TENSOR index=13 name=fc.weight dtype=2 ndim=2 dim0=33 dim1=512 scale=0.117227 payload_len=8448 payload_offset=4776673 next_offset=4785121 model_len=5242880
+RILM_TENSOR index=14 name=fc.bias dtype=0 ndim=1 dim0=33 dim1=0 scale=1 payload_len=132 payload_offset=4785144 next_offset=4785276 model_len=5242880
+payloads cloned bytes=4784772 free_heap=189096 free_psram=3635859
+int4 recurrent lstm.weight_hh_l0 old=1048576 new=524288 scale=0.11046
+int4 recurrent lstm.weight_hh_l1 old=1048576 new=524288 scale=0.141142
+int4 recurrent lstm.weight_hh_l2 old=1048576 new=524288 scale=0.127179
+int4 recurrent converted=3 saved=1572864 free_psram=2062947
+CLUSTER_MODEL_READY board_id=0 ok=1 role=coord
+CLUSTER_WIFI_PING_BROADCAST seq=1 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=2 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=3 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=4 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=5 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=6 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=7 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=8 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PING_BROADCAST seq=9 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=9 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=10 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=10 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=11 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=11 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=12 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=12 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=13 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=13 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=14 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=14 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PING_BROADCAST seq=15 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=15 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=15 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_START prompt="once upon a " final_input=  expected_token=19 expected_char=t
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1000 layer=0 offset=0 count=256 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1000 dst=1 row_start=0 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1000 dst=2 row_start=1024 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1000 layer=0 row_start=0 count=256 accepted=true local_reference_ok=false max_abs_err=1424
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1000 layer=0 row_start=0 count=256 max_abs_err=1424 ok=false
+CLUSTER_WIFI_PING_BROADCAST seq=16 dst=192.168.4.255 port=42100 sent=true reason=lstm_shard_discovery
+CLUSTER_WIFI_PONG src_board=1 seq=16 from=192.168.4.2:42100 rssi=0 model_ready=1
+CLUSTER_WIFI_PONG src_board=2 seq=16 from=192.168.4.3:42100 rssi=0 model_ready=1
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1000 layer=0 row_start=1024 count=256 accepted=true local_reference_ok=false max_abs_err=2238
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1000 layer=0 row_start=1024 count=256 max_abs_err=2238 ok=false
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1001 layer=0 offset=256 count=256 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1001 dst=1 row_start=256 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1001 dst=2 row_start=1280 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1001 layer=0 row_start=256 count=256 accepted=true local_reference_ok=false max_abs_err=1662
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1001 layer=0 row_start=256 count=256 max_abs_err=1662 ok=false
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1001 layer=0 row_start=1280 count=256 accepted=true local_reference_ok=false max_abs_err=2008
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1001 layer=0 row_start=1280 count=256 max_abs_err=2008 ok=false
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1002 layer=0 offset=512 count=256 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1002 dst=1 row_start=512 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1002 dst=2 row_start=1536 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1002 layer=0 row_start=512 count=256 accepted=true local_reference_ok=false max_abs_err=1927
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1002 layer=0 row_start=512 count=256 max_abs_err=1927 ok=false
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1002 layer=0 row_start=1536 count=256 accepted=true local_reference_ok=false max_abs_err=1327
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1002 layer=0 row_start=1536 count=256 max_abs_err=1327 ok=false
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1003 layer=0 offset=768 count=256 input_scale=0.017699463 h_scale=0.007871357
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1003 dst=1 row_start=768 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1003 dst=2 row_start=1792 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1003 layer=0 row_start=768 count=256 accepted=true local_reference_ok=false max_abs_err=2177
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1003 layer=0 row_start=768 count=256 max_abs_err=2177 ok=false
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1003 layer=0 row_start=1792 count=256 accepted=true local_reference_ok=false max_abs_err=1129
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1003 layer=0 row_start=1792 count=256 max_abs_err=1129 ok=false
+CLUSTER_DIST_GEN_LAYER_DONE layer=0
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1004 layer=1 offset=0 count=256 input_scale=0.007871369 h_scale=0.007870611
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1004 dst=1 row_start=0 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1004 dst=2 row_start=1024 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1004 layer=1 row_start=0 count=256 accepted=true local_reference_ok=false max_abs_err=2935
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1004 layer=1 row_start=0 count=256 max_abs_err=2935 ok=false
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1004 layer=1 row_start=1024 count=256 accepted=true local_reference_ok=false max_abs_err=2508
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1004 layer=1 row_start=1024 count=256 max_abs_err=2508 ok=false
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1005 layer=1 offset=256 count=256 input_scale=0.007871369 h_scale=0.007870611
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1005 dst=1 row_start=256 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1005 dst=2 row_start=1280 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1005 layer=1 row_start=256 count=256 accepted=true local_reference_ok=false max_abs_err=2964
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1005 layer=1 row_start=256 count=256 max_abs_err=2964 ok=false
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1005 layer=1 row_start=1280 count=256 accepted=true local_reference_ok=false max_abs_err=2781
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1005 layer=1 row_start=1280 count=256 max_abs_err=2781 ok=false
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1006 layer=1 offset=512 count=256 input_scale=0.007871369 h_scale=0.007870611
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1006 dst=1 row_start=512 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1006 dst=2 row_start=1536 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1006 layer=1 row_start=512 count=256 accepted=true local_reference_ok=false max_abs_err=3519
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1006 layer=1 row_start=512 count=256 max_abs_err=3519 ok=false
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1006 layer=1 row_start=1536 count=256 accepted=true local_reference_ok=false max_abs_err=2703
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1006 layer=1 row_start=1536 count=256 max_abs_err=2703 ok=false
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1007 layer=1 offset=768 count=256 input_scale=0.007871369 h_scale=0.007870611
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1007 dst=1 row_start=768 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1007 dst=2 row_start=1792 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1007 layer=1 row_start=768 count=256 accepted=true local_reference_ok=false max_abs_err=2451
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1007 layer=1 row_start=768 count=256 max_abs_err=2451 ok=false
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1007 layer=1 row_start=1792 count=256 accepted=true local_reference_ok=false max_abs_err=1609
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1007 layer=1 row_start=1792 count=256 max_abs_err=1609 ok=false
+CLUSTER_DIST_GEN_LAYER_DONE layer=1
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1008 layer=2 offset=0 count=256 input_scale=0.007867233 h_scale=0.007864650
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1008 dst=1 row_start=0 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1008 dst=2 row_start=1024 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1008 layer=2 row_start=0 count=256 accepted=true local_reference_ok=false max_abs_err=3797
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1008 layer=2 row_start=0 count=256 max_abs_err=3797 ok=false
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1008 layer=2 row_start=1024 count=256 accepted=true local_reference_ok=false max_abs_err=4229
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1008 layer=2 row_start=1024 count=256 max_abs_err=4229 ok=false
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1009 layer=2 offset=256 count=256 input_scale=0.007867233 h_scale=0.007864650
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1009 dst=1 row_start=256 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1009 dst=2 row_start=1280 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1009 layer=2 row_start=256 count=256 accepted=true local_reference_ok=false max_abs_err=4136
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1009 layer=2 row_start=256 count=256 max_abs_err=4136 ok=false
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1009 layer=2 row_start=1280 count=256 accepted=true local_reference_ok=false max_abs_err=3662
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1009 layer=2 row_start=1280 count=256 max_abs_err=3662 ok=false
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1010 layer=2 offset=512 count=256 input_scale=0.007867233 h_scale=0.007864650
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1010 dst=1 row_start=512 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1010 dst=2 row_start=1536 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1010 layer=2 row_start=512 count=256 accepted=true local_reference_ok=false max_abs_err=4195
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1010 layer=2 row_start=512 count=256 max_abs_err=4195 ok=false
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1010 layer=2 row_start=1536 count=256 accepted=true local_reference_ok=false max_abs_err=3066
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1010 layer=2 row_start=1536 count=256 max_abs_err=3066 ok=false
+CLUSTER_DIST_GEN_CHUNK_REQUEST seq=1011 layer=2 offset=768 count=256 input_scale=0.007867233 h_scale=0.007864650
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1011 dst=1 row_start=768 count=256 target=192.168.4.2 sent=true
+CLUSTER_DIST_GEN_CHUNK_SEND seq=1011 dst=2 row_start=1792 count=256 target=192.168.4.3 sent=true
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=1 seq=1011 layer=2 row_start=768 count=256 accepted=true local_reference_ok=false max_abs_err=4582
+CLUSTER_LSTM_GATE_RESULT src_board=1 seq=1011 layer=2 row_start=768 count=256 max_abs_err=4582 ok=false
+CLUSTER_DIST_GEN_CHUNK_RESULT src_board=2 seq=1011 layer=2 row_start=1792 count=256 accepted=true local_reference_ok=false max_abs_err=3671
+CLUSTER_LSTM_GATE_RESULT src_board=2 seq=1011 layer=2 row_start=1792 count=256 max_abs_err=3671 ok=false
+CLUSTER_DIST_GEN_LAYER_DONE layer=2
+CLUSTER_DIST_GEN_TOKEN prompt="once upon a " local_p22_token=19 local_p22_char=t dist_token=19 dist_char=t logit=10.186430 elapsed_ms=3143 status=PASS note=worker_int8_recurrent_vs_local_int4_reference
