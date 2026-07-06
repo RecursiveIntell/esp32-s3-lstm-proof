@@ -34,6 +34,10 @@ ROLE_ENVS = {
         "worker1": "cluster_worker1_ap_local_gen_h512",
         "worker2": "cluster_worker2_ap_local_gen_h512",
     },
+    "layer_shard_h768": {
+        "worker1": "cluster_worker1_ap_layer_shard_h768",
+        "worker2": "cluster_worker2_ap_layer_shard_h768",
+    },
 }
 
 

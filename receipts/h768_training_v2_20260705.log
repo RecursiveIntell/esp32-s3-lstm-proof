@@ -1,0 +1,152 @@
+Device: cpu
+Model: H=768 L=3 V=34
+Params: 14,226,466
+  embed: 26,112
+  layer 0: ih=2,359,296 hh=2,359,296 bias=3,072
+  layer 1: ih=2,359,296 hh=2,359,296 bias=3,072
+  layer 2: ih=2,359,296 hh=2,359,296 bias=3,072
+  fc: 26,112
+  total: 14,226,466
+Loading corpus from /home/sikmindz/projects/dying-llm/training/tinystories.txt...
+  loaded 5,000,000 chars
+Encoded 5,000,000 tokens
+Starting training...
+  epoch 1/4 step 100 loss=2.5675 batches=100 elapsed=76.1s
+  epoch 1/4 step 200 loss=2.2275 batches=200 elapsed=177.5s
+  epoch 1/4 step 300 loss=2.0429 batches=300 elapsed=293.9s
+  epoch 1/4 step 400 loss=1.9342 batches=400 elapsed=403.5s
+  epoch 1/4 step 500 loss=1.8666 batches=500 elapsed=523.4s
+  epoch 1/4 step 600 loss=1.8122 batches=600 elapsed=681.5s
+  epoch 1/4 step 700 loss=1.7692 batches=700 elapsed=855.8s
+  epoch 1/4 step 800 loss=1.7344 batches=800 elapsed=1054.0s
+  epoch 1/4 step 900 loss=1.7030 batches=900 elapsed=1205.4s
+  epoch 1/4 step 1000 loss=1.6699 batches=1000 elapsed=1357.1s
+  epoch 1/4 step 1100 loss=1.6312 batches=1100 elapsed=1470.8s
+  epoch 1/4 step 1200 loss=1.6055 batches=1200 elapsed=1591.9s
+  epoch 1/4 step 1300 loss=1.5761 batches=1300 elapsed=1732.9s
+  epoch 1/4 step 1400 loss=1.5541 batches=1400 elapsed=1864.5s
+  epoch 1/4 step 1500 loss=1.5342 batches=1500 elapsed=2038.6s
+  epoch 1/4 step 1600 loss=1.5202 batches=1600 elapsed=2174.5s
+  epoch 1/4 step 1700 loss=1.5031 batches=1700 elapsed=2318.2s
+  epoch 1/4 step 1800 loss=1.4892 batches=1800 elapsed=2477.0s
+  epoch 1/4 step 1900 loss=1.4731 batches=1900 elapsed=2633.1s
+  epoch 1/4 step 2000 loss=1.4594 batches=2000 elapsed=2809.1s
+  epoch 1/4 step 2100 loss=1.4469 batches=2100 elapsed=3499.7s
+  epoch 1/4 step 2200 loss=1.4325 batches=2200 elapsed=3851.3s
+  epoch 1/4 step 2300 loss=1.4227 batches=2300 elapsed=3981.6s
+  epoch 1/4 step 2400 loss=1.4118 batches=2400 elapsed=4095.2s
+  epoch 1 done: avg_loss=1.4114 time=4099.2s
+  epoch 2/4 step 2500 loss=1.2205 batches=97 elapsed=199.0s
+  epoch 2/4 step 2600 loss=1.1923 batches=197 elapsed=409.1s
+  epoch 2/4 step 2700 loss=1.1726 batches=297 elapsed=549.6s
+  epoch 2/4 step 2800 loss=1.1597 batches=397 elapsed=684.1s
+  epoch 2/4 step 2900 loss=1.1541 batches=497 elapsed=799.9s
+  epoch 2/4 step 3000 loss=1.1431 batches=597 elapsed=916.3s
+  epoch 2/4 step 3100 loss=1.1390 batches=697 elapsed=1034.7s
+  epoch 2/4 step 3200 loss=1.1418 batches=797 elapsed=1151.7s
+  epoch 2/4 step 3300 loss=1.1459 batches=897 elapsed=1267.9s
+  epoch 2/4 step 3400 loss=1.1464 batches=997 elapsed=1381.7s
+  epoch 2/4 step 3500 loss=1.1375 batches=1097 elapsed=1497.8s
+  epoch 2/4 step 3600 loss=1.1363 batches=1197 elapsed=1614.2s
+  epoch 2/4 step 3700 loss=1.1285 batches=1297 elapsed=1729.2s
+  epoch 2/4 step 3800 loss=1.1249 batches=1397 elapsed=1840.0s
+  epoch 2/4 step 3900 loss=1.1212 batches=1497 elapsed=1957.1s
+  epoch 2/4 step 4000 loss=1.1218 batches=1597 elapsed=2070.6s
+  epoch 2/4 step 4100 loss=1.1187 batches=1697 elapsed=2182.0s
+  epoch 2/4 step 4200 loss=1.1181 batches=1797 elapsed=2289.4s
+  epoch 2/4 step 4300 loss=1.1151 batches=1897 elapsed=2387.5s
+  epoch 2/4 step 4400 loss=1.1135 batches=1997 elapsed=2501.4s
+  epoch 2/4 step 4500 loss=1.1119 batches=2097 elapsed=2612.8s
+  epoch 2/4 step 4600 loss=1.1076 batches=2197 elapsed=2724.7s
+  epoch 2/4 step 4700 loss=1.1065 batches=2297 elapsed=2820.3s
+  epoch 2/4 step 4800 loss=1.1038 batches=2397 elapsed=2931.3s
+  epoch 2 done: avg_loss=1.1035 time=2935.0s
+  epoch 3/4 step 4900 loss=1.1038 batches=94 elapsed=104.8s
+  epoch 3/4 step 5000 loss=1.0840 batches=194 elapsed=211.1s
+  epoch 3/4 step 5100 loss=1.0703 batches=294 elapsed=318.0s
+  epoch 3/4 step 5200 loss=1.0629 batches=394 elapsed=413.3s
+  epoch 3/4 step 5300 loss=1.0599 batches=494 elapsed=523.0s
+  epoch 3/4 step 5400 loss=1.0513 batches=594 elapsed=630.2s
+  epoch 3/4 step 5500 loss=1.0471 batches=694 elapsed=737.0s
+  epoch 3/4 step 5600 loss=1.0496 batches=794 elapsed=837.0s
+  epoch 3/4 step 5700 loss=1.0539 batches=894 elapsed=944.9s
+  epoch 3/4 step 5800 loss=1.0560 batches=994 elapsed=1050.3s
+  epoch 3/4 step 5900 loss=1.0497 batches=1094 elapsed=1160.5s
+  epoch 3/4 step 6000 loss=1.0502 batches=1194 elapsed=1267.7s
+  epoch 3/4 step 6100 loss=1.0443 batches=1294 elapsed=1363.6s
+  epoch 3/4 step 6200 loss=1.0420 batches=1394 elapsed=1473.2s
+  epoch 3/4 step 6300 loss=1.0395 batches=1494 elapsed=1584.3s
+  epoch 3/4 step 6400 loss=1.0405 batches=1594 elapsed=1687.3s
+  epoch 3/4 step 6500 loss=1.0383 batches=1694 elapsed=1789.1s
+  epoch 3/4 step 6600 loss=1.0385 batches=1794 elapsed=1902.8s
+  epoch 3/4 step 6700 loss=1.0368 batches=1894 elapsed=1998.3s
+  epoch 3/4 step 6800 loss=1.0367 batches=1994 elapsed=2111.8s
+  epoch 3/4 step 6900 loss=1.0365 batches=2094 elapsed=2213.7s
+  epoch 3/4 step 7000 loss=1.0334 batches=2194 elapsed=2323.3s
+  epoch 3/4 step 7100 loss=1.0330 batches=2294 elapsed=2431.3s
+  epoch 3/4 step 7200 loss=1.0310 batches=2394 elapsed=2539.9s
+  epoch 3 done: avg_loss=1.0305 time=2545.4s
+  epoch 4/4 step 7300 loss=1.0427 batches=91 elapsed=102.5s
+  epoch 4/4 step 7400 loss=1.0301 batches=191 elapsed=197.5s
+  epoch 4/4 step 7500 loss=1.0196 batches=291 elapsed=306.9s
+  epoch 4/4 step 7600 loss=1.0160 batches=391 elapsed=417.5s
+  epoch 4/4 step 7700 loss=1.0148 batches=491 elapsed=526.3s
+  epoch 4/4 step 7800 loss=1.0076 batches=591 elapsed=621.2s
+  epoch 4/4 step 7900 loss=1.0032 batches=691 elapsed=736.4s
+  epoch 4/4 step 8000 loss=1.0048 batches=791 elapsed=847.5s
+  epoch 4/4 step 8100 loss=1.0087 batches=891 elapsed=945.0s
+  epoch 4/4 step 8200 loss=1.0108 batches=991 elapsed=1053.7s
+  epoch 4/4 step 8300 loss=1.0058 batches=1091 elapsed=1161.4s
+  epoch 4/4 step 8400 loss=1.0066 batches=1191 elapsed=1268.1s
+  epoch 4/4 step 8500 loss=1.0015 batches=1291 elapsed=1377.9s
+  epoch 4/4 step 8600 loss=0.9999 batches=1391 elapsed=1485.0s
+  epoch 4/4 step 8700 loss=0.9976 batches=1491 elapsed=1596.6s
+  epoch 4/4 step 8800 loss=0.9984 batches=1591 elapsed=1702.7s
+  epoch 4/4 step 8900 loss=0.9963 batches=1691 elapsed=1814.1s
+  epoch 4/4 step 9000 loss=0.9963 batches=1791 elapsed=1912.2s
+  epoch 4/4 step 9100 loss=0.9952 batches=1891 elapsed=2019.2s
+  epoch 4/4 step 9200 loss=0.9958 batches=1991 elapsed=2129.2s
+  epoch 4/4 step 9300 loss=0.9961 batches=2091 elapsed=2241.7s
+  epoch 4/4 step 9400 loss=0.9935 batches=2191 elapsed=2335.8s
+  epoch 4/4 step 9500 loss=0.9932 batches=2291 elapsed=2445.0s
+  epoch 4/4 step 9600 loss=0.9915 batches=2391 elapsed=2553.7s
+  epoch 4 done: avg_loss=0.9908 time=2561.0s
+Evaluation samples:
+  prompt='once upon a ' -> 'once upon a a sno. aenny came back until the monkey's dad wanted to eat stop'
+  prompt='there was a ' -> 'there was a done.
+"aommy, we can leave his friend," she said. "a didn't mean'
+  prompt='one day, a ' -> 'one day, a aimmy loved him safe and thanks, but they couldn't go on the bal'
+  prompt='the little ' -> 'the little end.
+aaendoftextaa
+ance upon a time, there was a little girl nam'
+  prompt='she said, ' -> 'she said, went to the ground. aommy and her broke up and decided to watch '
+Exporting RILM binary...
+Exported RILM to weights_h768_tinystories_v2.bin
+  size=14,282,368 bytes
+  sha256=cc2e69d5d0a9299ab0f13be562c1988ecdaef311c02346fcde18f65fb570a344
+  profile=tinystories_h768_all_int4
+  tensors=15
+  params=14,226,466
+Exporting layer-shard RILM files (one per board)...
+Exporting layer-shard RILM files:
+  weights_h768_tinystories_v2_layer_shard_board0.bin: 4,795,760 bytes sha256=18189c8b3478f357... tensors=7
+  weights_h768_tinystories_v2_layer_shard_board1.bin: 4,743,316 bytes sha256=92f0b2d0bd704913... tensors=4
+  weights_h768_tinystories_v2_layer_shard_board2.bin: 4,743,316 bytes sha256=6f751ae1b2dc8006... tensors=4
+Layer-shard export complete. Total: 14,282,392 bytes
+Saved PyTorch state to weights_h768_tinystories_v2.bin.pt
+
+Done. Full model flash to ESP32-S3 with:
+  esptool.py --chip esp32s3 --port /dev/ttyACM0 write_flash 0x210000 weights_h768_tinystories_v2.bin
+
+Layer-shard flash (one per board):
+  board0: esptool.py ... write_flash 0x210000 weights_h768_tinystories_v2_layer_shard_board0.bin (4,795,760 bytes)
+  board1: esptool.py ... write_flash 0x210000 weights_h768_tinystories_v2_layer_shard_board1.bin (4,743,316 bytes)
+  board2: esptool.py ... write_flash 0x210000 weights_h768_tinystories_v2_layer_shard_board2.bin (4,743,316 bytes)
+
+Build flags needed in platformio.ini:
+  -D RI_HIDDEN=768
+  -D RI_LAYERS=3
+  -D RI_WEIGHTS_SHA256="cc2e69d5d0a9299ab0f13be562c1988ecdaef311c02346fcde18f65fb570a344"
+  -D RI_MODEL_PROFILE="tinystories_h768_all_int4"
+  -D RI_MODEL_PARAMS=14226466
+  -D RI_COMPRESSED_BYTES=14282368
