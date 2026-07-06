@@ -1883,12 +1883,10 @@ static void model_init_suspend_watchdogs() {
 }
 
 static void model_init_resume_watchdogs() {
-  // Do NOT re-enable any WDTs for the coordinator. The coordinator runs
-  // heavy operations (dist gen, local gen, model init) that need more
-  // than any WDT timeout allows. Workers don't call this path.
-  // Task WDTs (Loop/Core0/Core1) are re-enabled for non-coordinator roles
-  // via the worker-only init path.
-#if !CLUSTER_ROLE_COORD
+  // Do NOT re-enable any WDTs for local generator mode. Both coordinator
+  // and workers run heavy 64-char generation (~5.5s per run) that starves
+  // both the Task WDT and RTC WDT.
+#if !CLUSTER_WIFI_LOCAL_GENERATOR
   enableLoopWDT();
   enableCore0WDT();
 #ifndef CONFIG_FREERTOS_UNICORE

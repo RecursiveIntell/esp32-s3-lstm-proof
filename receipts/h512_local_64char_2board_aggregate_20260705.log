@@ -1,0 +1,2 @@
+CLUSTER_BENCH_RESULT board=0 prompt_id=0 profile=tinystories_h512_mixed_lstm_safe generated_chars=64 elapsed_ms=5506 chars_per_sec=11.6237 checksum=0x890779ca output="time, there was a little girl called amy. she loved the car and "
+CLUSTER_BENCH_RESULT board=1 prompt_id=1 profile=tinystories_h512_mixed_lstm_safe generated_chars=64 elapsed_ms=5503 chars_per_sec=11.6300 checksum=0xb086efc5 output="was so happy. she said, you can have a special smile. you are so"

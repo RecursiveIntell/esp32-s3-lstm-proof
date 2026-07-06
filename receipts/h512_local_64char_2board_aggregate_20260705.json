@@ -1,0 +1,36 @@
+{
+  "aggregate_chars_per_sec": 23.247366509262623,
+  "boards": [
+    0,
+    1
+  ],
+  "claim_boundary": "Aggregate chars/s across independent ESP32-S3 local generator workers; not a single-stream latency or universal BPE-token/s claim. Latest receipt per board is used.",
+  "elapsed_ms_wall": 5506,
+  "generated_chars_total": 128,
+  "per_board_chars_per_sec": {
+    "0": 11.623683254631311,
+    "1": 11.630019989096857
+  },
+  "result_count": 2,
+  "results": [
+    {
+      "board": 0,
+      "chars_per_sec": 11.6237,
+      "checksum": 2298968522,
+      "elapsed_ms": 5506,
+      "generated_chars": 64,
+      "profile": "tinystories_h512_mixed_lstm_safe",
+      "prompt_id": 0
+    },
+    {
+      "board": 1,
+      "chars_per_sec": 11.63,
+      "checksum": 2961633221,
+      "elapsed_ms": 5503,
+      "generated_chars": 64,
+      "profile": "tinystories_h512_mixed_lstm_safe",
+      "prompt_id": 1
+    }
+  ],
+  "schema": "ri-esp32s3-cluster-aggregate-bench-v1"
+}
