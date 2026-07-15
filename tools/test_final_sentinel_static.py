@@ -150,7 +150,7 @@ check("RI_FINAL_SENTINEL=1" in pio_src, "RI_FINAL_SENTINEL flag set")
 h256_section = pio_src[pio_src.index("[env:esp32s3_final_sentinel_h256]"):]
 h256_section = h256_section[:h256_section.index("[env:", 10)] if "[env:" in h256_section[10:] else h256_section
 check("RI_HIDDEN=256" in h256_section, "H256 env has RI_HIDDEN=256")
-check("d8763148" in h256_section, "H256 env has correct weights hash")
+check("839605e2" in h256_section, "H256 env has correct weights hash")
 check("multisensor_h256_all_int8" in h256_section, "H256 env has correct model profile")
 
 # H320 profile checks
