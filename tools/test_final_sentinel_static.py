@@ -157,7 +157,7 @@ check("multisensor_h256_all_int8" in h256_section, "H256 env has correct model p
 h320_section = pio_src[pio_src.index("[env:esp32s3_final_sentinel_h320]"):]
 h320_section = h320_section[:h320_section.index("[env:", 10)] if "[env:" in h320_section[10:] else h320_section
 check("RI_HIDDEN=320" in h320_section, "H320 env has RI_HIDDEN=320")
-check("a1a4dcd0" in h320_section, "H320 env has correct weights hash")
+check("04be62bd" in h320_section, "H320 env has correct weights hash")
 check("multisensor_h320_all_int8" in h320_section, "H320 env has correct model profile")
 
 # ── 8. Model-to-actuator isolation (C1 mitigation) ─────────────────────
