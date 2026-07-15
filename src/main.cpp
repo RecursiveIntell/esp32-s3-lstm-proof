@@ -2353,7 +2353,16 @@ void lstm_layer(int layer, const float *input, int input_dim, bool measure) {
     }
   }
 
-  xSemaphoreTake(core1_done_sem, portMAX_DELAY);
+  // Wait for core 0 worker with watchdog feeding — use a short timeout loop
+  // instead of portMAX_DELAY so the TG1 hardware watchdog gets fed while we
+  // block. This is critical for H320 inference which takes ~60ms per char.
+  {
+    const TickType_t wdt_feed_ticks = pdMS_TO_TICKS(50);
+    while (xSemaphoreTake(core1_done_sem, wdt_feed_ticks) != pdTRUE) {
+      feed_tg1_wdt();
+      yield();
+    }
+  }
   if (measure) ops.core1_wait_us += (uint32_t)(micros() - tw);
 
   uint32_t t0 = measure ? micros() : 0;
@@ -3842,25 +3851,12 @@ static void sentinel_handle_run_command() {
   bool local_generated = false;
 
   if (policy.ai_route) {
-    // H320 generation can take >2s; suspend WiFi to prevent TG1WDT reset
-    // caused by WiFi background tasks competing with LSTM inference on core 0.
-#if RI_FINAL_SENTINEL
-    bool was_wifi = sentinel_wifi_connected;
-    if (was_wifi) {
-      WiFi.disconnect(true);
-      sentinel_wifi_connected = false;
-      delay(10);
-    }
-#endif
+    // H320 generation can take ~1.4s for 16 chars. The semaphore wait loop
+    // in lstm_layer() feeds the TG1 watchdog every 50ms, so WiFi tasks on
+    // core 0 get CPU time and the hardware watchdog stays fed.
     uint32_t start = millis();
     generate_stopped(policy.prompt, output, 16);
     gen_elapsed_ms = millis() - start;
-#if RI_FINAL_SENTINEL
-    if (was_wifi) {
-      WiFi.begin(RI_FINAL_WIFI_SSID, RI_FINAL_WIFI_PASSPHRASE);
-      sentinel_last_wifi_attempt = millis();
-    }
-#endif
     int chars = strlen(output);
     gen_chars_per_sec = gen_elapsed_ms ? (1000.0f * (float)chars / (float)gen_elapsed_ms) : 0.0f;
     local_generated = true;
@@ -4079,6 +4075,21 @@ static void sentinel_wifi_tick(uint32_t now) {
   const bool connected = WiFi.status() == WL_CONNECTED;
   if (!sentinel_wifi_connected && connected) {
     sentinel_wifi_connected = true;
+    // Extend TG1 WDT timeout — WiFi re-enables it with a short default.
+    // Set stage 0 to a very long timeout so H320 inference (~1.4s) doesn't trigger it.
+    // TG1: WPROTECT=0x60020010, CONFIG0=0x60020048, CONFIG2=0x60020054 (stage0 timeout)
+    {
+      volatile uint32_t *tg1_prot = (volatile uint32_t *)0x60020010;
+      volatile uint32_t *tg1_feed = (volatile uint32_t *)0x6002000C;
+      volatile uint32_t *tg1_cfg  = (volatile uint32_t *)0x60020048;
+      volatile uint32_t *tg1_stg0 = (volatile uint32_t *)0x60020054;
+      *tg1_prot = 0x50D83AA1;
+      *tg1_feed = 1;
+      // Set stage 0 timeout to 0xFFFF (very long — ~8.3s at 40MHz/2^15 prescale)
+      *tg1_stg0 = 0xFFFF;
+      // Keep WDT enabled but with the long timeout
+      *tg1_prot = 0;
+    }
     sentinel_http_ptr->on("/health", HTTP_GET, sentinel_http_health);
     sentinel_http_ptr->on("/status", HTTP_GET, sentinel_http_status);
     sentinel_http_ptr->begin();
@@ -4113,35 +4124,26 @@ void setup() {
   delay(1500);
 
 #if RI_FINAL_SENTINEL
-  // Disable the TG1 hardware watchdog completely at the very start.
-  // On ESP32-S3, TG1WDT_SYS_RST is caused by the Timer Group 1 hardware
-  // watchdog, which is configured by the ESP-IDF boot process and is
-  // INDEPENDENT of the software task watchdog. The only way to stop it
-  // is to unlock the write-protect and clear the enable bit.
-  // TG1 base=0x60020000: WPROTECT=base+0x10, CONFIG0=base+0x48
-  // CONFIG1=base+0x50 (prescaler), CONFIG2=base+0x54 (stage0 timeout)
+  // Disable brownout detector — heavy PSRAM access during H320 LSTM
+  // generation on N8R8 devkit boards can cause transient voltage dips.
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+  // Disable the TG1 hardware watchdog as belt-and-suspenders. The primary
+  // fix is feeding it in the semaphore wait loop of lstm_layer(), but we
+  // also disable it here so model loading (which can take seconds for
+  // PSRAM clone + int4 conversion) doesn't trigger it.
   {
     volatile uint32_t *tg1_prot = (volatile uint32_t *)0x60020010;
     volatile uint32_t *tg1_feed = (volatile uint32_t *)0x6002000C;
     volatile uint32_t *tg1_cfg  = (volatile uint32_t *)0x60020048;
-    volatile uint32_t *tg1_stg0 = (volatile uint32_t *)0x60020054;
-    *tg1_prot = 0x50D83AA1;  // Unlock write protect
-    *tg1_feed = 1;            // Feed (reset countdown)
-    // Set stage 0 timeout to maximum (0xFFFFFFFF = ~4.7s at 40MHz / 2^15)
-    // This gives us plenty of time for H320 generation (~2.7s worst case)
-    *tg1_stg0 = 0xFFFF;
-    // Disable WDT
+    *tg1_prot = 0x50D83AA1;
+    *tg1_feed = 1;
     *tg1_cfg  = 0;
-    *tg1_prot = 0;            // Re-lock write protect
+    *tg1_prot = 0;
   }
-  // Also disable RTC WDT.
+  // Disable RTC WDT too.
   WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0x50D83AA1);
   CLEAR_PERI_REG_MASK(RTC_CNTL_WDTCONFIG0_REG, RTC_CNTL_WDT_EN);
   WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0);
-  // Disable brownout detector.
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
-  // Deinitialize the ESP-IDF software task watchdog system.
-  esp_task_wdt_deinit();
 #endif
 
   Serial.printf("\nESP32-S3 LSTM boot %s\n", FIRMWARE_VARIANT);
