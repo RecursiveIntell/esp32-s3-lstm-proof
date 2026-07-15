@@ -8,11 +8,63 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <esp_task_wdt.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
 
 #include "cluster_protocol.h"
+
+#ifndef RI_FINAL_SENTINEL
+#define RI_FINAL_SENTINEL 0
+#endif
+
+#if RI_FINAL_SENTINEL
+#include "sensor_types.h"
+#include "sentinel_policy.h"
+#include "sentinel_receipt.h"
+#include "actuator_types.h"
+#endif
+
+#if RI_FINAL_SENTINEL
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ArduinoOTA.h>
+#include <Preferences.h>
+#include <mbedtls/sha256.h>
+
+// Local credentials are intentionally kept outside version control.  The same
+// header is also used by the cluster environments, so one ignored file can
+// provision this board without placing a password in platformio.ini.
+#if __has_include("wifi_secrets.local.h")
+#include "wifi_secrets.local.h"
+#endif
+
+// Empty credentials deliberately disable networking.  Supply both at build time
+// to enable the read-only HTTP/OTA service, e.g. with -D RI_FINAL_WIFI_SSID=...
+#ifndef RI_FINAL_WIFI_SSID
+#define RI_FINAL_WIFI_SSID ""
+#endif
+#ifndef RI_FINAL_WIFI_PASSPHRASE
+#define RI_FINAL_WIFI_PASSPHRASE ""
+#endif
+#ifndef RI_FINAL_OTA_PASSWORD
+#define RI_FINAL_OTA_PASSWORD ""
+#endif
+
+static inline bool sentinel_wifi_enabled() {
+  return strlen(RI_FINAL_WIFI_SSID) > 0 && strlen(RI_FINAL_WIFI_PASSPHRASE) > 0;
+}
+#endif // RI_FINAL_SENTINEL
+
+#if RI_FINAL_SENTINEL
+// Global WiFi service state (initialized lazily when WiFi is enabled)
+static WebServer *sentinel_http_ptr = nullptr;
+static bool sentinel_wifi_connected = false;
+static uint32_t sentinel_last_wifi_attempt = 0;
+static bool sentinel_ota_ready = false;
+#endif
+
 
 #ifndef CLUSTER_WIFI_PING_ONLY
 #define CLUSTER_WIFI_PING_ONLY 0
@@ -1552,6 +1604,13 @@ ModelView model;
 ResolvedModel resolved;
 OpBreakdown ops;
 
+#if RI_FINAL_SENTINEL
+// This is deliberately separate from the build-time expected identity.  It is
+// true only after the exact parsed RILM artifact has been SHA-256 verified.
+static bool sentinel_model_hash_verified = false;
+static uint32_t sentinel_model_artifact_bytes = 0;
+#endif
+
 // Dual-core sync
 static SemaphoreHandle_t core1_start_sem = nullptr;
 static SemaphoreHandle_t core1_done_sem = nullptr;
@@ -1796,6 +1855,14 @@ char idx_vocab(int idx) {
   return VOCAB[idx];
 }
 
+static inline void feed_tg1_wdt() {
+  // Feed the Timer Group 1 hardware watchdog directly via its feed register.
+  // On ESP32-S3: TG1 base=0x60020000, WDTFEED=base+0x00C = 0x6002000C
+  // Writing any value to this register resets the WDT countdown.
+  volatile uint32_t *tg1_wdt_feed = (volatile uint32_t *)0x6002000C;
+  *tg1_wdt_feed = 1;
+}
+
 static inline void model_init_pump_watchdog() {
   // H512 init can spend seconds cloning PSRAM payloads and packing recurrent
   // matrices before the main loop starts servicing WiFi. Yield explicitly so
@@ -1806,6 +1873,8 @@ static inline void model_init_pump_watchdog() {
   WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0x50D83AA1);
   WRITE_PERI_REG(RTC_CNTL_WDTCONFIG0_REG, 0x32 << 2 | RTC_CNTL_WDT_EN);
   WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0);
+  // Also feed TG1 WDT (the actual source of TG1WDT_SYS_RST).
+  feed_tg1_wdt();
 }
 
 static void model_init_copy_payload(uint8_t *dst, const uint8_t *src, uint32_t len) {
@@ -1827,11 +1896,26 @@ static void model_init_suspend_watchdogs() {
 #ifndef CONFIG_FREERTOS_UNICORE
   disableCore1WDT();
 #endif
-  // Also disable RTC hardware WDT (TG1WDT) to prevent reset during
-  // heavy PSRAM clone/convert and post-init local gen operations.
+  // Disable RTC hardware WDT (TG1WDT) to prevent reset during
+  // heavy PSRAM clone/convert and generation operations.
   WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0x50D83AA1);
   CLEAR_PERI_REG_MASK(RTC_CNTL_WDTCONFIG0_REG, RTC_CNTL_WDT_EN);
   WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0);
+  // Also disable Timer Group 1 WDT (TG1WDT_SYS_RST source on ESP32-S3).
+  // This is the hardware watchdog that fires during long inference on H320.
+#if RI_FINAL_SENTINEL
+  // Feed then disable TG1 WDT via direct register access.
+  // On ESP32-S3: TG0 base=0x6001F000, TG1 base=0x60020000
+  // TG1 WDT: CONFIG0=base+0x48, FEED=base+0x0C, WPROTECT=base+0x10
+  // Must unlock write-protect with magic 0x50D83AA1 before writing config.
+  volatile uint32_t *tg1_wdt_prot  = (volatile uint32_t *)0x60020010;
+  volatile uint32_t *tg1_wdt_feed  = (volatile uint32_t *)0x6002000C;
+  volatile uint32_t *tg1_wdt_cfg   = (volatile uint32_t *)0x60020048;
+  *tg1_wdt_prot  = 0x50D83AA1;   // Unlock write protect
+  *tg1_wdt_feed  = 1;             // Feed (reset timer)
+  *tg1_wdt_cfg  &= ~1u;           // Clear WDT_EN bit (bit 0)
+  *tg1_wdt_prot  = 0;             // Re-lock write protect
+#endif
 }
 
 static void model_init_resume_watchdogs() {
@@ -1844,8 +1928,50 @@ static void model_init_resume_watchdogs() {
 #ifndef CONFIG_FREERTOS_UNICORE
   enableCore1WDT();
 #endif
+  // Re-enable RTC hardware WDT for sentinel mode (it was suspended during
+  // generation but should be active during normal operation).
+#if RI_FINAL_SENTINEL
+  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0x50D83AA1);
+  WRITE_PERI_REG(RTC_CNTL_WDTCONFIG0_REG, 0x32 << 2 | RTC_CNTL_WDT_EN);
+  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0);
+#endif
 #endif
 }
+
+#if RI_FINAL_SENTINEL
+static bool sentinel_verify_parsed_model_hash(const uint8_t *data, uint32_t len) {
+  uint8_t digest[32];
+  char hex[65];
+  mbedtls_sha256_context ctx;
+  mbedtls_sha256_init(&ctx);
+  int rc = mbedtls_sha256_starts_ret(&ctx, 0);
+  // Hash in bounded chunks so artifact verification itself cannot starve the
+  // watchdog on a large memory-mapped partition.
+  for (uint32_t offset = 0; rc == 0 && offset < len;) {
+    uint32_t chunk = len - offset;
+    if (chunk > 4096) chunk = 4096;
+    rc = mbedtls_sha256_update_ret(&ctx, data + offset, chunk);
+    offset += chunk;
+    model_init_pump_watchdog();
+  }
+  if (rc == 0) rc = mbedtls_sha256_finish_ret(&ctx, digest);
+  mbedtls_sha256_free(&ctx);
+  if (rc != 0) {
+    Serial.printf("S3_SENTINEL_MODEL_HASH error=%d bytes=%lu\n", rc, (unsigned long)len);
+    return false;
+  }
+  static const char kHex[] = "0123456789abcdef";
+  for (size_t i = 0; i < sizeof(digest); ++i) {
+    hex[i * 2] = kHex[digest[i] >> 4];
+    hex[i * 2 + 1] = kHex[digest[i] & 0x0f];
+  }
+  hex[64] = 0;
+  const bool match = strcmp(hex, RI_WEIGHTS_SHA256) == 0;
+  Serial.printf("S3_SENTINEL_MODEL_HASH verified=%u bytes=%lu expected=%s actual=%s\n",
+                match ? 1 : 0, (unsigned long)len, RI_WEIGHTS_SHA256, hex);
+  return match;
+}
+#endif
 
 bool load_model_partition() {
   const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t)0x40, "weights");
@@ -1929,6 +2055,10 @@ bool load_model_partition() {
     p += model.tensors[i].payload_len;
     model_init_pump_watchdog();
   }
+#if RI_FINAL_SENTINEL
+  sentinel_model_artifact_bytes = (uint32_t)(p - model.base);
+  sentinel_model_hash_verified = sentinel_verify_parsed_model_hash(model.base, sentinel_model_artifact_bytes);
+#endif
   return true;
 }
 
@@ -2151,6 +2281,13 @@ static inline float tanhf_fast(float x) { return lut_lookup(tanh_lut, x); }
 // Core 0 worker task: computes half the LSTM gates while core 1 does the other half.
 // Pinned to core 0. Arduino loopTask is on core 1.
 static void core0_worker(void *arg) {
+  // Unsubscribe this task from the task watchdog — the worker computes
+  // LSTM gates synchronously on demand and cannot feed the WDT during a
+  // single model_step call. The sentinel generation loop feeds the RTC
+  // WDT instead, and the main loop feeds its own task WDT.
+#if RI_FINAL_SENTINEL
+  esp_task_wdt_delete(NULL);
+#endif
   while (true) {
     xSemaphoreTake(core1_start_sem, portMAX_DELAY);
     if (!core1_active) continue;
@@ -3296,7 +3433,11 @@ void json_escape_print(const char *s) {
 void generate_stopped(const char *seed, char *out, int max_chars) {
   reset_state();
   int token = vocab_idx(seed[0]);
-  for (const char *p = seed; *p; p++) token = model_step(vocab_idx(*p), false);
+  for (const char *p = seed; *p; p++) {
+    token = model_step(vocab_idx(*p), false);
+    yield();
+    feed_tg1_wdt();
+  }
   int i = 0;
   for (; i < max_chars; i++) {
     char ch = idx_vocab(token);
@@ -3304,6 +3445,8 @@ void generate_stopped(const char *seed, char *out, int max_chars) {
     if (ch == '.' || ch == '\n') { i++; break; }
     token = model_step(token, false);
     yield();
+    // Feed TG1 WDT every char to prevent reset on slow H320 model
+    feed_tg1_wdt();
   }
   if (i > max_chars) i = max_chars;
   out[i] = 0;
@@ -3506,6 +3649,460 @@ void poll_serial_language_commands() {
   }
 }
 
+#if RI_FINAL_SENTINEL
+
+// ── Multi-sensor buffer (replaces old SentinelReading) ──────────────
+static SensorBuffer g_sensors;
+
+// ── Servo / actuator state ───────────────────────────────────────────
+static ServoConfig g_servos[MAX_SERVOS];
+static int g_servo_count = 0;
+
+static void servo_init_slot(int slot, uint8_t gpio) {
+  if (slot < 0 || slot >= MAX_SERVOS) return;
+  ServoConfig &s = g_servos[slot];
+  s.gpio = gpio;
+  s.channel = (uint8_t)slot;  // LEDC channel 0-3
+  s.attached = true;
+  s.current_angle = 90;  // neutral
+  ledcSetup(s.channel, SERVO_FREQ_HZ, SERVO_RESOLUTION);
+  ledcAttachPin(gpio, s.channel);
+  ledcWrite(s.channel, SERVO_DUTY_NEUTRAL);
+  Serial.printf("S3_SENTINEL_SERVO_ATTACHED slot=%d gpio=%u channel=%u angle=90\n",
+                slot, (unsigned)gpio, (unsigned)s.channel);
+  if (slot + 1 > g_servo_count) g_servo_count = slot + 1;
+}
+
+static void servo_move(int slot, int angle) {
+  if (slot < 0 || slot >= MAX_SERVOS || !g_servos[slot].attached) return;
+  if (angle < 0) angle = 0;
+  if (angle > 180) angle = 180;
+  uint32_t duty = servo_angle_to_duty(angle);
+  ledcWrite(g_servos[slot].channel, duty);
+  g_servos[slot].current_angle = angle;
+  Serial.printf("S3_SENTINEL_SERVO_MOVE slot=%d angle=%d duty=%lu\n",
+                slot, angle, (unsigned long)duty);
+}
+
+// ── Multi-sensor serial command: SENSOR:<type>:<value>[:<secondary>][:<age_s>]
+// Legacy format SENSOR:<temp_c>,<humidity_pct>,<age_s> still supported.
+static void sentinel_handle_sensor_command(const char *line) {
+  const char *p = line + 7;  // skip "SENSOR:"
+  while (*p == ' ') p++;
+
+  // Legacy format: SENSOR:29.4,72.0,3 (temp,humidity,age)
+  if (isdigit((int)*p) || *p == '-' || *p == '.' || *p == 'n') {
+    char *end;
+    float temp_c = strtof(p, &end);
+    if (end == p || (*end != ',' && *end != '\0')) {
+      Serial.println("S3_SENTINEL_ERROR {\"error\":\"invalid_SENSOR_format\"}");
+      return;
+    }
+    if (*end == ',') {
+      // Full legacy: temp,humidity,age
+      p = end + 1;
+      float humidity = strtof(p, &end);
+      if (end == p) {
+        Serial.println("S3_SENTINEL_ERROR {\"error\":\"invalid_SENSOR_format\"}");
+        return;
+      }
+      p = end + (strchr(p, ',') ? 1 : 0);
+      unsigned long age_s = 0;
+      if (*p) age_s = strtoul(p, &end, 10);
+
+      // Inject temp
+      SensorReading *tr = g_sensors.find_or_alloc(SENSOR_TEMP);
+      if (tr) {
+        tr->value = temp_c;
+        tr->quality = sensor_value_plausible(SENSOR_TEMP, temp_c) ? QUALITY_VALID : QUALITY_IMPLAUSIBLE;
+        tr->age_ms = age_s * 1000UL;
+        tr->last_update = millis() - tr->age_ms;
+      }
+      // Inject humidity
+      SensorReading *hr = g_sensors.find_or_alloc(SENSOR_HUMIDITY);
+      if (hr) {
+        hr->value = humidity;
+        hr->quality = sensor_value_plausible(SENSOR_HUMIDITY, humidity) ? QUALITY_VALID : QUALITY_IMPLAUSIBLE;
+        hr->age_ms = age_s * 1000UL;
+        hr->last_update = millis() - hr->age_ms;
+      }
+      Serial.printf("S3_SENTINEL_SENSOR {\"accepted\":true,\"legacy\":true,\"temp_c\":%.2f,\"humidity_pct\":%.2f,\"age_ms\":%lu}\n",
+                    temp_c, humidity, (unsigned long)(age_s * 1000UL));
+      return;
+    }
+    // Just a temperature value
+    SensorReading *tr = g_sensors.find_or_alloc(SENSOR_TEMP);
+    if (tr) {
+      tr->value = temp_c;
+      tr->quality = sensor_value_plausible(SENSOR_TEMP, temp_c) ? QUALITY_VALID : QUALITY_IMPLAUSIBLE;
+      tr->age_ms = 0;
+      tr->last_update = millis();
+    }
+    Serial.printf("S3_SENTINEL_SENSOR {\"accepted\":true,\"type\":\"temp\",\"value\":%.2f}\n", temp_c);
+    return;
+  }
+
+  // New format: SENSOR:<type>:<value>[:<secondary>][:<age_s>]
+  // Parse type
+  char type_str[32];
+  int ti = 0;
+  while (*p && *p != ':' && ti < (int)sizeof(type_str) - 1) type_str[ti++] = *p++;
+  type_str[ti] = '\0';
+  if (*p != ':') {
+    Serial.println("S3_SENTINEL_ERROR {\"error\":\"missing_value\",\"hint\":\"SENSOR:<type>:<value>\"}");
+    return;
+  }
+  p++;
+
+  SensorType stype = parse_sensor_type(type_str);
+  if (stype == SENSOR_NONE) {
+    Serial.printf("S3_SENTINEL_ERROR {\"error\":\"unknown_sensor_type\",\"type\":\"%s\"}\n", type_str);
+    return;
+  }
+
+  // Parse value
+  char *end;
+  float value = strtof(p, &end);
+  if (end == p) {
+    Serial.printf("S3_SENTINEL_ERROR {\"error\":\"invalid_value\",\"type\":\"%s\"}\n", type_str);
+    return;
+  }
+  p = end;
+
+  // Optional secondary value
+  float secondary = NAN;
+  if (*p == ':') {
+    p++;
+    float s = strtof(p, &end);
+    if (end != p) {
+      secondary = s;
+      p = end;
+    }
+  }
+
+  // Optional age in seconds
+  unsigned long age_s = 0;
+  if (*p == ':') {
+    p++;
+    age_s = strtoul(p, &end, 10);
+    p = end;
+  }
+
+  // Validate plausibility
+  SensorQuality quality = sensor_value_plausible(stype, value) ? QUALITY_VALID : QUALITY_IMPLAUSIBLE;
+  if (isnan(value)) quality = QUALITY_NAN;
+
+  // Store reading
+  SensorReading *r = g_sensors.find_or_alloc(stype);
+  if (!r) {
+    Serial.println("S3_SENTINEL_ERROR {\"error\":\"sensor_buffer_full\"}");
+    return;
+  }
+  r->value = value;
+  r->secondary = secondary;
+  r->quality = quality;
+  r->age_ms = age_s * 1000UL;
+  r->last_update = millis() - r->age_ms;
+
+  Serial.printf("S3_SENTINEL_SENSOR {\"accepted\":true,\"type\":\"%s\",\"value\":%.2f,\"quality\":\"%s\",\"age_ms\":%lu}\n",
+                sensor_type_name(stype), value, quality_str(quality), (unsigned long)(age_s * 1000UL));
+}
+
+// ── STATUS command: full multi-sensor status ────────────────────────
+static void sentinel_handle_status_command() {
+  g_sensors.update_age();
+  Serial.print("S3_SENTINEL_STATUS {\"schema\":\"ri_esp32s3_sentinel_status_v2\",");
+  Serial.printf("\"device_id\":\"%s\",\"boot_id\":%lu,\"event_seq\":%lu,",
+                g_receipt_id.device_id, (unsigned long)g_receipt_id.boot_id,
+                (unsigned long)g_receipt_id.event_seq);
+  Serial.printf("\"firmware_variant\":\"%s\",\"model_profile\":\"%s\",\"params\":%lu,",
+                FIRMWARE_VARIANT, RI_MODEL_PROFILE, (unsigned long)RI_MODEL_PARAMS);
+  Serial.printf("\"weights_sha256\":\"%s\",\"model_hash_verified\":%s,",
+                WEIGHTS_SHA256, sentinel_model_hash_verified ? "true" : "false");
+  Serial.printf("\"sensor_count\":%d,", g_sensors.count);
+  Serial.print("\"sensors\":[");
+  for (int i = 0; i < g_sensors.count; i++) {
+    SensorReading &r = g_sensors.readings[i];
+    if (i > 0) Serial.print(",");
+    Serial.printf("{\"type\":\"%s\",\"quality\":\"%s\",\"value\":%.2f,\"age_ms\":%lu}",
+                  sensor_type_name(r.type), quality_str(r.quality), r.value, (unsigned long)r.age_ms);
+  }
+  Serial.print("],");
+  Serial.printf("\"uptime_ms\":%lu,\"free_heap\":%lu,\"free_psram\":%lu,\"psram_size\":%lu}\n",
+                (unsigned long)millis(), (unsigned long)ESP.getFreeHeap(),
+                (unsigned long)ESP.getFreePsram(), (unsigned long)ESP.getPsramSize());
+}
+
+// ── RUN command: evaluate policy, optionally generate advisory text ──
+static void sentinel_handle_run_command() {
+  PolicyResult policy = evaluate_policy(g_sensors);
+  char output[UTILITY_MAX_CHARS + 1];
+  uint32_t gen_elapsed_ms = 0;
+  float gen_chars_per_sec = 0.0f;
+  bool local_generated = false;
+
+  if (policy.ai_route) {
+    // H320 generation can take >2s; suspend WiFi to prevent TG1WDT reset
+    // caused by WiFi background tasks competing with LSTM inference on core 0.
+#if RI_FINAL_SENTINEL
+    bool was_wifi = sentinel_wifi_connected;
+    if (was_wifi) {
+      WiFi.disconnect(true);
+      sentinel_wifi_connected = false;
+      delay(10);
+    }
+#endif
+    uint32_t start = millis();
+    generate_stopped(policy.prompt, output, 16);
+    gen_elapsed_ms = millis() - start;
+#if RI_FINAL_SENTINEL
+    if (was_wifi) {
+      WiFi.begin(RI_FINAL_WIFI_SSID, RI_FINAL_WIFI_PASSPHRASE);
+      sentinel_last_wifi_attempt = millis();
+    }
+#endif
+    int chars = strlen(output);
+    gen_chars_per_sec = gen_elapsed_ms ? (1000.0f * (float)chars / (float)gen_elapsed_ms) : 0.0f;
+    local_generated = true;
+  }
+
+  // ── Actuator: policy-driven servo control ───────────────────────────
+  // The LM NEVER controls actuators. Only the deterministic policy decides.
+  ActuatorCommand act = policy_to_servo((uint8_t)policy.decision);
+  if (act.servo_move && g_servos[act.servo_channel].attached) {
+    servo_move(act.servo_channel, act.servo_angle);
+  }
+
+  const char *receipt = build_receipt(
+    g_sensors, policy, local_generated,
+    local_generated ? output : "",
+    gen_elapsed_ms, gen_chars_per_sec,
+    sentinel_model_hash_verified,
+    FIRMWARE_VARIANT, RI_MODEL_PROFILE,
+    RI_MODEL_PARAMS, WEIGHTS_SHA256);
+
+  Serial.print("S3_SENTINEL_RECEIPT ");
+  Serial.println(receipt);
+
+  // Emit actuator receipt if servo moved
+  if (act.servo_move && g_servos[act.servo_channel].attached) {
+    Serial.printf("S3_SENTINEL_ACTUATOR {\"servo\":%d,\"angle\":%d,\"reason\":\"%s\",\"policy\":\"%s\"}\n",
+                  act.servo_channel, act.servo_angle, act.reason,
+                  policy_decision_name(policy.decision));
+  }
+}
+
+// ── SENSORS command: list all registered sensor types ───────────────
+static void sentinel_handle_sensors_list_command() {
+  Serial.println("S3_SENTINEL_SENSOR_TYPES");
+  for (int i = 1; i < SENSOR_TYPE_COUNT; i++) {
+    Serial.printf("  %s [%s] range=%.1f..%.1f\n",
+                  SENSOR_RANGES[i].name, SENSOR_RANGES[i].unit,
+                  SENSOR_RANGES[i].min_val, SENSOR_RANGES[i].max_val);
+  }
+  Serial.printf("  registered=%d/%d\n", g_sensors.count, MAX_SENSORS);
+}
+
+// ── CLEAR command: clear all sensor readings ─────────────────────────
+static void sentinel_handle_clear_command() {
+  g_sensors.count = 0;
+  Serial.println("S3_SENTINEL_CLEARED");
+}
+
+// ── SERVO command: SERVO:<slot>:<angle> ─────────────────────────────
+// Manually move a servo. slot=0-3, angle=0-180.
+static void sentinel_handle_servo_command(const char *line) {
+  const char *p = line + 6;  // skip "SERVO:"
+  char *end;
+  int slot = (int)strtol(p, &end, 10);
+  if (end == p || *end != ':') {
+    Serial.println("S3_SENTINEL_ERROR {\"error\":\"invalid_SERVO_format\",\"hint\":\"SERVO:<slot>:<angle>\"}");
+    return;
+  }
+  p = end + 1;
+  int angle = (int)strtol(p, &end, 10);
+  if (slot < 0 || slot >= MAX_SERVOS || !g_servos[slot].attached) {
+    Serial.printf("S3_SENTINEL_ERROR {\"error\":\"servo_not_attached\",\"slot\":%d}\n", slot);
+    return;
+  }
+  servo_move(slot, angle);
+}
+
+// ── SERVOATTACH command: SERVOATTACH:<slot>:<gpio> ──────────────────
+static void sentinel_handle_servo_attach_command(const char *line) {
+  const char *p = line + 12;  // skip "SERVOATTACH:"
+  char *end;
+  int slot = (int)strtol(p, &end, 10);
+  if (end == p || *end != ':') {
+    Serial.println("S3_SENTINEL_ERROR {\"error\":\"invalid_SERVOATTACH_format\"}");
+    return;
+  }
+  p = end + 1;
+  int gpio = (int)strtol(p, &end, 10);
+  if (slot < 0 || slot >= MAX_SERVOS) {
+    Serial.printf("S3_SENTINEL_ERROR {\"error\":\"invalid_slot\",\"slot\":%d}\n", slot);
+    return;
+  }
+  servo_init_slot(slot, (uint8_t)gpio);
+}
+
+// ── ACTUATORS command: list all attached actuators ───────────────────
+static void sentinel_handle_actuators_list_command() {
+  Serial.println("S3_SENTINEL_ACTUATORS");
+  for (int i = 0; i < g_servo_count; i++) {
+    if (g_servos[i].attached) {
+      Serial.printf("  servo slot=%d gpio=%u channel=%u angle=%d\n",
+                    i, (unsigned)g_servos[i].gpio,
+                    (unsigned)g_servos[i].channel, g_servos[i].current_angle);
+    }
+  }
+  Serial.printf("  total_servos=%d/%d\n", g_servo_count, MAX_SERVOS);
+}
+
+// ── Serial command parser ────────────────────────────────────────────
+static void sentinel_poll_serial_commands() {
+  static char line[256];
+  static int n = 0;
+  while (Serial.available() > 0) {
+    char c = (char)Serial.read();
+    if (c == '\r') continue;
+    if (c == '\n') {
+      line[n] = 0;
+      n = 0;
+      if (strncmp(line, "SENSOR:", 7) == 0) {
+        sentinel_handle_sensor_command(line);
+      } else if (strcmp(line, "STATUS") == 0) {
+        sentinel_handle_status_command();
+      } else if (strcmp(line, "RUN") == 0) {
+        sentinel_handle_run_command();
+      } else if (strcmp(line, "SENSORS") == 0) {
+        sentinel_handle_sensors_list_command();
+      } else if (strcmp(line, "ACTUATORS") == 0) {
+        sentinel_handle_actuators_list_command();
+      } else if (strncmp(line, "SERVOATTACH:", 12) == 0) {
+        sentinel_handle_servo_attach_command(line);
+      } else if (strncmp(line, "SERVO:", 6) == 0) {
+        sentinel_handle_servo_command(line);
+      } else if (strcmp(line, "CLEAR") == 0) {
+        sentinel_handle_clear_command();
+      } else if (strncmp(line, "PROMPT:", 7) == 0) {
+        const char *prompt = line + 7;
+        while (*prompt == ' ') prompt++;
+        run_language_prompt_receipt(prompt);
+      } else if (strlen(line) > 0) {
+        Serial.print("S3_SENTINEL_ERROR {\"error\":\"unknown_command\",\"received\":\"");
+        // safe escape for the received line
+        for (const char *q = line; *q; q++) {
+          if (*q == '"' || *q == '\\') Serial.print('\\');
+          Serial.print(*q);
+        }
+        Serial.println("\"}");
+      }
+    } else if (n < (int)sizeof(line) - 1) {
+      line[n++] = c;
+    } else {
+      n = 0;
+      Serial.println("S3_SENTINEL_ERROR {\"error\":\"line_too_long\"}");
+    }
+  }
+}
+
+// ── WiFi / OTA / HTTP (unchanged from original, adapted for v2) ──────
+static void sentinel_setup_wifi() {
+  if (!sentinel_wifi_enabled()) return;
+  if (sentinel_http_ptr == nullptr) {
+    sentinel_http_ptr = new WebServer(80);
+  }
+  if (sentinel_http_ptr == nullptr) {
+    Serial.println("S3_SENTINEL_WIFI_ERROR phase=http_alloc");
+    return;
+  }
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(RI_FINAL_WIFI_SSID, RI_FINAL_WIFI_PASSPHRASE);
+  sentinel_last_wifi_attempt = millis();
+  Serial.printf("S3_SENTINEL_WIFI_CONNECTING ssid=%s\n", RI_FINAL_WIFI_SSID);
+}
+
+static void sentinel_setup_ota() {
+  if (sentinel_ota_ready || strlen(RI_FINAL_OTA_PASSWORD) == 0) return;
+  ArduinoOTA.setHostname("ri-esp32s3-sentinel");
+  ArduinoOTA.setPassword(RI_FINAL_OTA_PASSWORD);
+  ArduinoOTA.setPort(3232);
+  ArduinoOTA.onStart([]() { Serial.println("S3_SENTINEL_OTA_START"); });
+  ArduinoOTA.onEnd([]() { Serial.println("S3_SENTINEL_OTA_END ok=1"); });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("S3_SENTINEL_OTA_ERROR code=%u\n", (unsigned)error);
+  });
+  ArduinoOTA.begin();
+  sentinel_ota_ready = true;
+  Serial.printf("S3_SENTINEL_OTA_READY hostname=ri-esp32s3-sentinel port=3232\n");
+}
+
+static void sentinel_http_health() {
+  String body = "{\"ok\":true,\"variant\":\"" + String(FIRMWARE_VARIANT) +
+               "\",\"model\":\"" + String(RI_MODEL_PROFILE) +
+               "\",\"device_id\":\"" + String(g_receipt_id.device_id) +
+               "\",\"uptime_ms\":" + String(millis()) + "}";
+  sentinel_http_ptr->send(200, "application/json", body);
+}
+
+static void sentinel_http_status() {
+  g_sensors.update_age();
+  String body = "{\"schema\":\"ri_esp32s3_sentinel_status_v2\",";
+  body += "\"device_id\":\"" + String(g_receipt_id.device_id) + "\",";
+  body += "\"boot_id\":" + String(g_receipt_id.boot_id) + ",";
+  body += "\"event_seq\":" + String(g_receipt_id.event_seq) + ",";
+  body += "\"firmware_variant\":\"" + String(FIRMWARE_VARIANT) + "\",";
+  body += "\"model_profile\":\"" + String(RI_MODEL_PROFILE) + "\",";
+  body += "\"model_hash_verified\":" + String(sentinel_model_hash_verified ? "true" : "false") + ",";
+  body += "\"sensor_count\":" + String(g_sensors.count) + ",";
+  body += "\"sensors\":[";
+  for (int i = 0; i < g_sensors.count; i++) {
+    SensorReading &r = g_sensors.readings[i];
+    if (i > 0) body += ",";
+    body += "{\"type\":\"" + String(sensor_type_name(r.type)) + "\",";
+    body += "\"quality\":\"" + String(quality_str(r.quality)) + "\",";
+    body += "\"value\":" + String(isnan(r.value) ? "null" : String(r.value, 2)) + ",";
+    body += "\"age_ms\":" + String(r.age_ms) + "}";
+  }
+  body += "],";
+  body += "\"uptime_ms\":" + String(millis()) + ",";
+  body += "\"free_heap\":" + String(ESP.getFreeHeap()) + ",";
+  body += "\"free_psram\":" + String(ESP.getFreePsram()) + "}";
+  sentinel_http_ptr->send(200, "application/json", body);
+}
+
+static void sentinel_wifi_tick(uint32_t now) {
+  if (!sentinel_wifi_enabled() || sentinel_http_ptr == nullptr) return;
+  const bool connected = WiFi.status() == WL_CONNECTED;
+  if (!sentinel_wifi_connected && connected) {
+    sentinel_wifi_connected = true;
+    sentinel_http_ptr->on("/health", HTTP_GET, sentinel_http_health);
+    sentinel_http_ptr->on("/status", HTTP_GET, sentinel_http_status);
+    sentinel_http_ptr->begin();
+    Serial.printf("S3_SENTINEL_WIFI_CONNECTED ip=%s rssi=%ld http=80\n",
+                  WiFi.localIP().toString().c_str(), (long)WiFi.RSSI());
+    sentinel_setup_ota();
+  } else if (sentinel_wifi_connected && !connected) {
+    sentinel_wifi_connected = false;
+    Serial.println("S3_SENTINEL_WIFI_DISCONNECTED reconnecting=true");
+  }
+  if (!sentinel_wifi_connected) {
+    if (now - sentinel_last_wifi_attempt > 30000) {
+      WiFi.reconnect();
+      sentinel_last_wifi_attempt = now;
+    }
+  }
+  if (sentinel_wifi_connected) {
+    sentinel_http_ptr->handleClient();
+    if (sentinel_ota_ready) ArduinoOTA.handle();
+  }
+}
+#endif
+
+
 void setup() {
 #if CLUSTER_WIFI_DEMO
   cluster_setup_wifi_demo();
@@ -3514,6 +4111,39 @@ void setup() {
 
   Serial.begin(115200);
   delay(1500);
+
+#if RI_FINAL_SENTINEL
+  // Disable the TG1 hardware watchdog completely at the very start.
+  // On ESP32-S3, TG1WDT_SYS_RST is caused by the Timer Group 1 hardware
+  // watchdog, which is configured by the ESP-IDF boot process and is
+  // INDEPENDENT of the software task watchdog. The only way to stop it
+  // is to unlock the write-protect and clear the enable bit.
+  // TG1 base=0x60020000: WPROTECT=base+0x10, CONFIG0=base+0x48
+  // CONFIG1=base+0x50 (prescaler), CONFIG2=base+0x54 (stage0 timeout)
+  {
+    volatile uint32_t *tg1_prot = (volatile uint32_t *)0x60020010;
+    volatile uint32_t *tg1_feed = (volatile uint32_t *)0x6002000C;
+    volatile uint32_t *tg1_cfg  = (volatile uint32_t *)0x60020048;
+    volatile uint32_t *tg1_stg0 = (volatile uint32_t *)0x60020054;
+    *tg1_prot = 0x50D83AA1;  // Unlock write protect
+    *tg1_feed = 1;            // Feed (reset countdown)
+    // Set stage 0 timeout to maximum (0xFFFFFFFF = ~4.7s at 40MHz / 2^15)
+    // This gives us plenty of time for H320 generation (~2.7s worst case)
+    *tg1_stg0 = 0xFFFF;
+    // Disable WDT
+    *tg1_cfg  = 0;
+    *tg1_prot = 0;            // Re-lock write protect
+  }
+  // Also disable RTC WDT.
+  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0x50D83AA1);
+  CLEAR_PERI_REG_MASK(RTC_CNTL_WDTCONFIG0_REG, RTC_CNTL_WDT_EN);
+  WRITE_PERI_REG(RTC_CNTL_WDTWPROTECT_REG, 0);
+  // Disable brownout detector.
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+  // Deinitialize the ESP-IDF software task watchdog system.
+  esp_task_wdt_deinit();
+#endif
+
   Serial.printf("\nESP32-S3 LSTM boot %s\n", FIRMWARE_VARIANT);
   Serial.printf("free_heap=%lu free_psram=%lu psram_size=%lu\n",
     (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(), (unsigned long)ESP.getPsramSize());
@@ -3541,8 +4171,18 @@ void setup() {
   Serial.printf("MODEL_READY profile=%s params=%lu hidden=%u layers=%u\n",
                 RI_MODEL_PROFILE, (unsigned long)RI_MODEL_PARAMS,
                 (unsigned)HIDDEN, (unsigned)LAYERS);
+
+#if RI_FINAL_SENTINEL
+  receipt_init();
+  Serial.printf("S3_SENTINEL_READY variant=%s model_hash_verified=%s offline_first=true multi_sensor=true\n",
+                FIRMWARE_VARIANT, sentinel_model_hash_verified ? "true" : "false");
+  if (sentinel_wifi_enabled()) {
+    sentinel_setup_wifi();
+  }
+#else
   run_benchmark();
   Serial.println("PROOF_DONE");
+#endif
 }
 
 void loop() {
@@ -3551,6 +4191,16 @@ void loop() {
   return;
 #endif
 
+#if RI_FINAL_SENTINEL
+  sentinel_poll_serial_commands();
+  sentinel_wifi_tick(millis());
+  static uint32_t last_idle = 0;
+  if (millis() - last_idle >= 5000) {
+    last_idle = millis();
+    Serial.println("idle; send STATUS, RUN, SENSORS, ACTUATORS, CLEAR, SENSOR:<type>:<value>, SERVO:<slot>:<angle>, or PROMPT:<text>");
+  }
+  delay(10);
+#else
   poll_serial_language_commands();
   static uint32_t last_idle = 0;
   if (millis() - last_idle >= 5000) {
@@ -3558,4 +4208,5 @@ void loop() {
     Serial.println("idle; send PROMPT:<text> for S3_LANGUAGE_RECEIPT");
   }
   delay(10);
+#endif
 }
