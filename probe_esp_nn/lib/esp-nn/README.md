@@ -1,5 +1,7 @@
 # ESP-NN
 
+This is a vendored kernel snapshot. The performance and configuration material below is upstream ESP-NN documentation; it is not a new benchmark of this repository's firmware. The upstream top-level CMake build file is not included in this copy.
+
 The library contains optimised NN (Neural Network) functions for various Espressif chips.
 
 * Supported platforms:
@@ -81,7 +83,7 @@ The library contains optimised NN (Neural Network) functions for various Espress
   - SPIRAM used for TensorArena.
   - Person detection on ESP32-S3 with internal RAM: 47ms
   - ESP32-P4 optimisation is work in progress
-  - `Without ESP-NN` case is when `esp-nn` is completely disabled by removing below flag from [CMakeLists.txt](CMakeLists.txt):
+  - `Without ESP-NN` case is when `esp-nn` is completely disabled by removing below flag from `CMakeLists.txt` (upstream build file; omitted from this vendored kernel snapshot):
     ```cmake
       # enable ESP-NN optimizations by Espressif
       target_compile_options(${COMPONENT_LIB} PRIVATE -DESP_NN)
