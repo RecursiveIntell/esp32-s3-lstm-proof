@@ -2,7 +2,7 @@
 
 A char-level LSTM running at **39.52 characters/second** (**~9.9 BPE-equivalent tokens/second**) on a **$4 ESP32-S3** microcontroller, plus a three-board coordinator-AP cluster proof with relay-updatable workers. No GPU. No cloud. Just Rust, C++, and hardware-verified receipts.
 
-> **Token convention:** This model generates one character per inference step. Standard LLM benchmarks use BPE/WordPiece tokens. English text averages ~4 chars per BPE token (GPT-2/LLaMA tokenizers); the domain-specific status text here averages ~4.5 chars/token. We report both metrics. When comparing to LLM tok/s benchmarks, use the BPE-equivalent column.
+> **Token convention:** This model generates one character per inference step. Standard LLM benchmarks use BPE/WordPiece tokens. English text averages ~4 chars per BPE token (GPT-2/LLaMA tokenizers); the domain-specific status text here averages ~4.5 chars/token. We report both metrics. Do not treat the BPE-equivalent estimate as measured tokenizer throughput in cross-model comparisons.
 
 ## Benchmark summary
 
@@ -17,9 +17,9 @@ A char-level LSTM running at **39.52 characters/second** (**~9.9 BPE-equivalent 
 | **p22 int4+SIMD** | **H256 all-int8** | **1.60M** | **39.52** | **~9.88** | **25.30** | **64.7x** | **yes** |
 | **TinyStories H512** | **H512 mixed story model** | **6.34M** | **11.62** | **~2.91** | **86.04** | **19.0x** | **yes** |
 
-BPE tok/s uses the standard 4.0 chars/token ratio for English. Domain-specific status text (e.g. "check airflow.") averages ~4.5 chars/token, giving ~7.2 BPE tok/s.
+BPE tok/s uses the standard 4.0 chars/token ratio for English. Domain-specific status text (e.g. "check airflow.") averages ~4.5 chars/token, giving a different illustrative estimate from the 4.0 ratio; this is not an independently measured token rate.
 
-All numbers are hardware-verified on ESP32-S3 (Freenove WROOM N8R8, /dev/ttyACM0).
+The hardware measurements are recorded for the stated ESP32-S3 fixture (Freenove WROOM N8R8). Derived ratios and BPE equivalents are calculations, not additional hardware measurements.
 Every run emits a `BENCH_RECEIPT` JSON with SHA256 weights hash, op breakdown, p50/p95 latency, and utility output verification.
 
 ## TinyStories-class H512 hardware run
@@ -60,52 +60,19 @@ python3 tools/run_bench.py --port /dev/ttyACM0 \
 
 Full report: `TINYSTORIES_H512_HARDWARE_REPORT_2026-07-03.md`.
 
-## Comparison to prior work
+## Interpreting the measurements
 
-| Project | Stars | Throughput | Model | Hardware | Verified? |
-|---------|------:|-----------:|-------|----------|:---------:|
-| **This work (p16)** | — | **32.59 chars/s (~8 BPE tok/s)** | 1.6M char-LSTM | ESP32-S3 | hardware receipt |
-| AIWintermuteAI/esp32-llm | 92 | 19.13 BPE tok/s | 260K llama2.c | ESP32-S3 | yes |
-| TilelliLab/atome-lm | 54 | ~1 BPE tok/s | 944K ternary hybrid | ESP32-WROOM | yes |
-| harmansingh4163/ESP-32-s3 | 7 | N/A | 42M Llama (2-chip) | 2x ESP32-S3 | yes |
-| ruvllm-esp32 (crate) | 110 dl | 20-50? (unverified) | 260K | ESP32 | no receipt |
+The [p22 summary and raw runs](benchmarks/p22_i4_wih_whh_simd_h256/) record a mean of 39.517 characters/s across three runs on the stated ESP32-S3 fixture. The [TinyStories H512 report](TINYSTORIES_H512_HARDWARE_REPORT_2026-07-03.md) covers a different model and firmware configuration.
 
-Note: AIWintermuteAI and atome-lm use BPE/byte-pair tokenizers, so their tok/s is directly comparable to the BPE-equivalent column. AIWintermuteAI's 19.13 BPE tok/s vs this work's ~8 BPE tok/s — their transformer is faster in raw BPE tokens per second, but this work's LSTM has 6.15x more parameters (1.6M vs 260K) and generates domain-specific phrases with 100% output accuracy across 8 verified prompts. The architectures serve different purposes: llama2.c generates general text, this LSTM generates constrained domain status/action text.
+Characters/s is the measured unit. The BPE-equivalent column divides by an assumed characters-per-token ratio; it is an illustration, not measured tokenization and not a directly comparable cross-model token-throughput benchmark. Different vocabularies, architectures, model sizes, kernels, and workloads must be controlled before making an engine-superiority claim.
 
-## Engine efficiency comparison
-
-Raw BPE tok/s favors smaller models. The fairer comparison is inference engine throughput — how many MACs per second each engine processes on the same hardware:
-
-| Engine | Type | Weights | SIMD | Effective MACs/s |
-|--------|------|---------|------|-----------------:|
-| **This work (p16)** | int8 ESP-NN dot | int8, SRAM-tiled | Xtensa LX7 16-lane int8 | **51.5M** |
-| AIWintermuteAI | float32 ESP-DSP | float32, PSRAM | Xtensa 4-lane float32 | 11.2M |
-
-This work's inference engine processes **4.6x more MACs per second** on the same ESP32-S3 hardware. The advantage comes from:
-- int8 ESP-NN SIMD: 16 int8 MACs per cycle vs 4 float32 MACs per cycle (4x SIMD width)
-- SRAM weight tiling: ~200 MB/s memory bandwidth for recurrent weights vs PSRAM ~100 MB/s
-- Fixed-point LUT activations: no float math in the hot path
-
-### Projected throughput at equivalent model size
-
-If this inference engine ran a 260K param LSTM (matching AIWintermuteAI's model size):
-
-| Configuration | Model | MACs/output | BPE tok/s | vs AIWintermuteAI |
-|---------------|-------|------------:|----------:|------------------:|
-| This engine + 260K LSTM | hidden=100, 3 layers | 243K | **~53** | **2.8x faster** |
-| This engine + 400K LSTM | hidden=128, 3 layers | 397K | **~32** | 1.7x faster |
-| This engine + 1.6M LSTM (actual) | hidden=256, 3 layers | 1.58M | ~8 | 0.42x (6.15x larger model) |
-| AIWintermuteAI + 260K transformer | llama2.c, float32 | 586K | 19.13 | baseline |
-
-At equivalent model size, this int8 engine is projected **2.8x faster** than the float32 transformer engine. The 1.6M param model runs at ~8 BPE tok/s because it does 10.8x more compute per BPE token (1.58M MACs/char x 4 chars/token = 6.3M MACs vs 586K MACs), but the engine processes that compute 4.6x faster, netting ~2.3x slower despite 6.15x more model capacity.
-
-The engine efficiency — not raw tok/s — is the systems contribution. The 53x optimization journey produced an int8 inference engine that is 4.6x more efficient than the closest comparable float32 engine on the same hardware.
+The p0-to-p16/p22 ratios compare different model configurations as well as implementation changes. They do not isolate a pure software speedup at a fixed model size. Output checks are fixture-specific; a passing short prompt set does not establish general language quality or exact agreement with every expected string.
 
 ## What makes this fast
 
 Three optimizations, each hardware-verified:
 
-1. **ESP-NN SIMD dot product for LSTM gates** — ESP-NN was designed for CNN inference (conv, pooling, FC). Using `esp_nn_dot_s8_aligned_esp32s3()` for LSTM gate matmuls is novel. Standalone benchmark: 12.6x faster than scalar for 512x512 SRAM-resident int8 dot.
+1. **ESP-NN SIMD dot product for LSTM gates** — ESP-NN was designed for CNN inference (conv, pooling, FC). This implementation uses `esp_nn_dot_s8_aligned_esp32s3()` for LSTM gate matmuls. Standalone benchmark: 12.6x faster than scalar for 512x512 SRAM-resident int8 dot.
 
 2. **SRAM weight tiling** — Copy recurrent weight matrices from PSRAM (~100 MB/s) to internal SRAM (~200+ MB/s) at the start of each LSTM layer. Result: recurrent dot product 7.6x faster (15ms -> 2ms per token). H256: 262KB fits in SRAM. H320: 410KB does not fit.
 
@@ -130,7 +97,7 @@ chars/s
        (~0.15)  (~0.67) (~0.92)          (~4.3)  (~6.3)  (~8.1 BPE tok/s)
 ```
 
-53.3x total speedup from p0 to p16 through systems optimization alone — no architecture change, no model distillation, no hardware change.
+The recorded p0-to-p16 throughput ratio is approximately 53.3×. The table also changes from an H512 mixed model to an H256 all-int8 model, so this ratio combines model/configuration changes with systems optimizations.
 
 ## Verified utility outputs
 
