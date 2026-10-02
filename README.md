@@ -14,7 +14,7 @@ A char-level LSTM running at **39.52 characters/second** (**~9.9 BPE-equivalent 
 | p12 ESP-NN aligned | H256 all-int8 | 1.60M | 25.07 | 6.27 | 40 | 41.0x | yes |
 | p14 curated | H320 all-int8 | 2.49M | 17.22 | 4.30 | 58 | 28.2x | yes |
 | p16 SRAM+dual-core | H256 all-int8 | 1.60M | 32.59 | ~8.15 | 31 | 53.3x | yes |
-| **p22 int4+SIMD** | **H256 all-int8** | **1.60M** | **39.52** | **~9.88** | **25.30** | **64.7x** | **yes** |
+| **p22 SIMD** | **H256 all-int8** | **1.60M** | **39.52** | **~9.88** | **25.30** | **64.7x** | **yes** |
 | **TinyStories H512** | **H512 mixed story model** | **6.34M** | **11.62** | **~2.91** | **86.04** | **19.0x** | **yes** |
 
 BPE tok/s uses the standard 4.0 chars/token ratio for English. Domain-specific status text (e.g. "check airflow.") averages ~4.5 chars/token, giving a different illustrative estimate from the 4.0 ratio; this is not an independently measured token rate.
