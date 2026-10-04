@@ -277,9 +277,9 @@ Final reproduced cluster recheck receipt: `CLUSTER_FINAL_RECHECK_2026-07-03.md`.
 - Production-ready (it is a hardware proof, not a product)
 
 **Why LSTM not transformer:**
-- LSTM: O(1) inference memory, no KV cache, 25-32 tok/s on ESP32-S3
-- Transformer: O(n) KV cache, attention overhead, 0.1-2 tok/s projected on same hardware
-- For sub-2M param on-device generation on ESP32-S3, LSTM is the practical choice
+- LSTM: O(1) recurrent-state inference memory with no KV cache. The H256 character-level model measured 39.52 generated characters/s on the stated fixture; ~9.88 BPE-equivalent tokens/s is a calculated 4-chars/token conversion, not measured tokenizer throughput.
+- Transformer: O(n) KV cache and attention overhead; this repository contains no transformer benchmark to support a throughput comparison.
+- The evidence here supports this specific character-LSTM workload, not a general recommendation that LSTMs outperform transformers.
 
 ## License
 
